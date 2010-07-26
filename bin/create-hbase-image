@@ -80,11 +80,11 @@ scp $SSH_OPTS "$bin"/image/create-hbase-image-remote "root@$HOSTNAME:/mnt"
 scp $SSH_OPTS "$bin"/image/ec2-run-user-data "root@$HOSTNAME:/etc/init.d"
 
 # Copy private key and certificate (for bundling image)
-scp $SSH_OPTS $EC2_PRIVATE_KEY "root@$HOSTNAME:/mnt"
-scp $SSH_OPTS $EC2_CERT "root@$HOSTNAME:/mnt"
+scp $SSH_OPTS $EC2_PRIVATE_KEY "root@$HOSTNAME:/mnt/key.pem"
+scp $SSH_OPTS $EC2_CERT "root@$HOSTNAME:/mnt/cert.pem"
 
 # Connect to it
-ssh $SSH_OPTS "root@$HOSTNAME" "sh -c \"INSTANCE_TYPE=$type ARCH=$arch HBASE_URL=$HBASE_URL HADOOP_URL=$HADOOP_URL LZO_URL=$LZO_URL JAVA_URL=$JAVA_URL /mnt/create-hbase-image-remote\""
+ssh $SSH_OPTS "root@$HOSTNAME" "sh -c \"INSTANCE_TYPE=$type ARCH=$arch HBASE_VERSION=$HBASE_VERSION HBASE_URL=$HBASE_URL HADOOP_VERSION=$HADOOP_VERSION HADOOP_URL=$HADOOP_URL LZO_URL=$LZO_URL JAVA_URL=$JAVA_URL S3_BUCKET=$S3_BUCKET /mnt/create-hbase-image-remote\""
 
 # Register image
 
