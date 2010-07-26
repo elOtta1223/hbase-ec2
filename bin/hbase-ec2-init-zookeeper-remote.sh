@@ -28,7 +28,6 @@ export JAVA_HOME=/usr/local/jdk1.6.0_20
 # HBase configuration (Zookeeper)
 ###############################################################################
 
-
 cat > $HBASE_HOME/conf/hbase-site.xml <<EOF
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
@@ -52,7 +51,9 @@ cat > $HBASE_HOME/conf/hbase-site.xml <<EOF
 </configuration>
 EOF
 
+###############################################################################
 # Start services
+###############################################################################
 
 # up open file descriptor limits
 echo "root soft nofile 32768" >> /etc/security/limits.conf
