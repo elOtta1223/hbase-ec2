@@ -65,5 +65,5 @@ elif [ "$COMMAND" = "screen" ] ; then
   ssh $SSH_OPTS -t "root@$HOST" 'screen -D -R'
 else
   echo "Executing command on host $HOST."
-  ssh $SSH_OPTS -t "root@$HOST" "$COMMAND"
+  ssh $SSH_OPTS -t "root@$HOST" "$COMMAND $@"
 fi
