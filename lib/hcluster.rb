@@ -60,9 +60,8 @@ module Hadoop
       puts ""
       puts "Himage.new"
       puts "  options: (default)"
-      puts "   :label  (nil) (see HImage.list for a list of labels)"
+      puts "   :label"
       puts ""
-      puts "Himage.list shows a list of possible :label values."
     end
 
     def initialize(options = {})
@@ -87,9 +86,14 @@ module Hadoop
         @image_id = @image.imageId
         @image
       else
-        #not enough options: show usage and exit.
+        #not enough options: show usage and exit with error.
+        raise "Himage.new: not enough options"
         initialize_himage_usage
       end
+    end
+
+    def to_s
+      "(himage)"
     end
 
     def Himage.find_owned_image(options)
@@ -568,13 +572,13 @@ module Hadoop
       @@shared_base_object.deregister_image({:image_id => image})
     end
 
-    def HCluster.create_image_print_usage
+    def Himage.create_image_print_usage
       puts ""
-      puts "HCluster.create_image"
+      puts "Himage.create_image"
       puts "  options: (default)"
-      puts "  :label (nil) (see HCluster.my_images for a list of labels)"
-      puts "  :hbase_version (ENV['HBASE_VERSION'])"
-      puts "  :hadoop_version (ENV['HADOOP_VERSION'])"
+      puts "  :label (nil) (see Himage.my_images for a list of existing labels)"
+      puts "  :hbase_version (ENV['HBASE_VERSION']) (if label is specified, overrides hbase_version)"
+      puts "  :hadoop_version (ENV['HADOOP_VERSION']) ("
       puts "  :slave_instance_type (nil)"
       puts "  :debug (false)"
 #FIXME: use ENV as above.
@@ -584,7 +588,7 @@ module Hadoop
       puts "HCluster.my_images shows a list of possible :label values."
     end
     
-    def HCluster.create_image(options = {})
+    def Himage.create_image(options = {})
       if options.size == 0
         return create_image_print_usage
       end
