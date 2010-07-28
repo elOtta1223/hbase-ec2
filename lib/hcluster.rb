@@ -14,7 +14,7 @@ module Hadoop
   end
 
   class HimageBuilder
-    attr_reader :ami_bucket, :tar_bucket, :buckets
+    attr_reader :amis, :tars, :buckets
     def initialize(options = {})
       undefined_env_variables = false
       if !ENV['AWS_ACCESS_KEY_ID']
@@ -31,10 +31,10 @@ module Hadoop
         raise HimageBuilderInitializationError, "undefined AWS environment variables."
       end
 
-      if options[:tarfile]
-        @tarfile = options[:tarfile]
+      if options[:tars]
+        @tars = options[:tars]
       else
-        raise HimageBuilderInitializationError, "No :tarfile specified: you must specify a path to a tar file created with 'ant tar' or 'mvn assembly'."
+        raise HimageBuilderInitializationError, "No :tars specified: you must specify a path to a tar file created with 'ant tar' or 'mvn assembly'."
       end
 
       AWS::S3::Base.establish_connection!(
@@ -43,8 +43,8 @@ module Hadoop
 
       @buckets = AWS::S3::Service.buckets
 
-      @ami_bucket = find_bucket(options[:ami_bucket] || options[:bucket])
-      @tar_bucket = find_bucket(options[:tar_bucket] || options[:bucket])
+      @amis = find_bucket(options[:amis] || options[:bucket])
+      @tars = find_bucket(options[:tars] || options[:bucket])
     end
 
     def find_bucket(bucket_name)
@@ -74,14 +74,14 @@ module Hadoop
     end
 
     def create_image(options = {})
-      #upload tarball to @tar_bucket.
+      #upload tarball to @tars.
       upload_tar @tarfile
     end
 
     def upload_tar(tarfile)
       filename = File.basename(tarfile)
-      puts "Storing '#{filename}' in s3 bucket '#{@tar_bucket.name}'.."
-      AWS::S3::S3Object.store filename, open(tarfile), @tar_bucket.name, :access => :public_read
+      puts "Storing '#{filename}' in s3 bucket '#{@tars.name}'.."
+      AWS::S3::S3Object.store filename, open(tarfile), @tars.name, :access => :public_read
       puts "done."
     end
 
