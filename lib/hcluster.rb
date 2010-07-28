@@ -28,7 +28,13 @@ module Hadoop
       end
 
       if undefined_env_variables
-        raise HimageBuilderInitializationError
+        raise HimageBuilderInitializationError, "undefined AWS environment variables."
+      end
+
+      if options[:tarfile]
+        @tarfile = options[:tarfile]
+      else
+        raise HimageBuilderInitializationError, "No :tarfile specified: you must specify a path to a tar file created with 'ant tar' or 'mvn assembly'."
       end
 
       AWS::S3::Base.establish_connection!(
@@ -65,6 +71,18 @@ module Hadoop
 
     def buckets
       AWS::S3::Service::buckets
+    end
+
+    def create_image(options = {})
+      #upload tarball to @tar_bucket.
+      upload_tar @tarfile
+    end
+
+    def upload_tar(tarfile)
+      filename = File.basename(tarfile)
+      puts "Storing '#{filename}' in s3 bucket '#{@tar_bucket.name}'.."
+      AWS::S3::S3Object.store filename, open(tarfile), @tar_bucket.name, :access => :public_read
+      puts "done."
     end
 
   end
