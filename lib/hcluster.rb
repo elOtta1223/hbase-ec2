@@ -10,7 +10,66 @@ require 'aws/s3'
 
 module Hadoop
 
-  class Himage < AWS::EC2::Base
+  class HimageBuilderInitializationError < StandardError
+  end
+
+  class HimageBuilder
+    attr_reader :ami_bucket, :tar_bucket, :buckets
+    def initialize(options = {})
+      undefined_env_variables = false
+      if !ENV['AWS_ACCESS_KEY_ID']
+        puts "Please define AWS_ACCESS_KEY_ID in your environment."
+        undefined_env_variables = true
+      end
+
+      if !ENV['AWS_SECRET_ACCESS_KEY']
+        puts "Please define AWS_SECRET_ACCESS_KEY in your environment."
+        undefined_env_variables = true
+      end
+
+      if undefined_env_variables
+        raise HimageBuilderInitializationError
+      end
+
+      AWS::S3::Base.establish_connection!(
+                                          :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
+                                          :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY'])
+
+      @buckets = AWS::S3::Service.buckets
+
+      @ami_bucket = find_bucket(options[:ami_bucket] || options[:bucket])
+      @tar_bucket = find_bucket(options[:tar_bucket] || options[:bucket])
+    end
+
+    def find_bucket(bucket_name)
+      if bucket_name
+        begin
+          AWS::S3::Bucket.find bucket_name
+        rescue AWS::S3::AccessDenied # this exception thrown if bucket doesn't exist.
+          puts "ami destination bucket: '#{bucket_name}' does not exist: trying to create."
+          AWS::S3::Bucket.create(bucket_name)
+          AWS::S3::Bucket.find bucket_name
+        end
+      else
+        if @buckets[0]
+          return @buckets[0]
+        else
+          raise HimageBuilderInitializationError,"No buckets found for your Amazon S3 account: Please create at least one with AWS::S3::Bucket.create 'bucketname'."
+        end
+      end
+    end
+
+    def connected?
+      AWS::S3::Base::connected?
+    end
+
+    def buckets
+      AWS::S3::Service::buckets
+    end
+
+  end
+
+  class Himage 
     attr_reader :label,:image_id,:image,:shared_base_object, :owner_id
 
     @@owner_id = ENV['AWS_ACCOUNT_ID'].gsub(/-/,'')
@@ -28,28 +87,8 @@ module Hadoop
       puts "ooops..maybe you didn't define AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY? "
     end
 
-    @@s3 = AWS::S3::S3Object
-
-    if !(@@s3.connected?)
-      @@s3.establish_connection!(
-                                 :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
-                                 :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY']
-                                 )
-    end
-
     def list
       HCluster.my_images
-    end
-
-    def Himage::s3
-      @@s3
-    end
-
-    def Himage::upload_tar(label = "test", bucket = "ekoontz-tarballs",file="/Users/ekoontz/s3/sample.tar.gz")
-      filename = File.basename(file)
-      puts "storing '#{filename}' in s3 bucket '#{bucket}'.."
-      @@s3.store filename, open(file), bucket,:access => :public_read
-      puts "done."
     end
 
     def Himage::list
