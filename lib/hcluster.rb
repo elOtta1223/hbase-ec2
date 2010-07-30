@@ -127,7 +127,7 @@ module Hadoop
         
         if (retval2 == nil and search_all_visible_images == true)
           options.delete(:owner_id)
-          puts "image '#{image_label}' not found in owner #{@@owner_id}'s images; looking in all images (may take a while..)"
+          puts "image named '#{image_label}' not found in owner #{@@owner_id}'s images; looking in all images (may take a while..)"
           retval = @@shared_base_object.describe_images(options)
           #filter by image_label
           retval2 = retval['imagesSet']['item'].detect{
@@ -244,8 +244,7 @@ module Hadoop
         :slave_arch => "x86_64",
         :debug_level => @@debug_level,
         :validate_images => true,
-        :security_group_prefix => "hcluster",
-        :availability_zone => "us-east-1a",
+        :security_group_prefix => "hcluster"
       }.merge(options)
 
       
@@ -885,9 +884,7 @@ module Hadoop
     
     def HCluster.do_launch(options,name="",on_boot = nil)
       # @@shared_base_object requires :image_id instead of :ami; I prefer the latter.
-      options = {
-        :image_id => options[:ami]
-      }.merge(options)
+      options[:image_id] = options[:ami] if options[:ami]
 
       instances = @@shared_base_object.run_instances(options)
       watch(name,instances)
@@ -1014,6 +1011,11 @@ module Hadoop
       #for each zookeeper, copy ~/hbase-ec2/bin/hbase-ec2-init-zookeeper-remote.sh to zookeeper, and run it.
       HCluster::until_ssh_able(zks)
       zks.each {|zk|
+
+        # if no zone specified by user, use the zone that AWS chose for the first
+        # instance launched in the cluster (the first zookeeper).
+        @zone = @zks[0].placement['availabilityZone'] if !@zone
+
         if (@debug_level > 0)
           puts "zk dnsname: #{zk.dnsName}"
         end
@@ -1150,9 +1152,7 @@ module Hadoop
     def HCluster.describe_images(options,image_label = nil,search_all_visible_images = true)
 
       # @@shared_base_object requires :image_id instead of :ami; I prefer the latter.
-      options = {
-        :image_id => options[:ami]
-      }.merge(options)
+      options[:image_id] = options[:ami] if options[:ami]
 
       if image_label
         options = {
@@ -1206,7 +1206,7 @@ module Hadoop
       return describe_images({:owner_id => @@owner_id},image_label,false)
     end
     
-    def get_image(image_label)
+    def get_image(image_label,options = {})
       options = {
         :owner_id => @ami_owner_id
       }.merge(options)
