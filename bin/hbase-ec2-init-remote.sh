@@ -103,6 +103,8 @@ sysctl -w fs.file-max=32768
 # up ulimits
 echo "root soft nofile 32768" >> /etc/security/limits.conf
 echo "root hard nofile 32768" >> /etc/security/limits.conf
+echo "hadoop soft nofile 32768" >> /etc/security/limits.conf
+echo "hadoop hard nofile 32768" >> /etc/security/limits.conf
 
 # up epoll limits; ok if this fails, only valid for kernels 2.6.27+
 sysctl -w fs.epoll.max_user_instances=32768 > /dev/null 2>&1
@@ -129,6 +131,8 @@ fi
 yum -y install krb5-libs jakarta-commons-daemon-jsvc
 [ -f $HADOOP_HOME/bin/jsvc ] || ln -s /usr/bin/jsvc $HADOOP_HOME/bin
 adduser hadoop
+groupadd supergroup
+adduser -G supergroup hbase
 if [ "$IS_MASTER" = "true" ]; then
   yum -y install krb5-server
   cat > /var/kerberos/krb5kdc/kadm5.acl <<EOF
@@ -619,6 +623,8 @@ ln -s $HADOOP_HOME/conf/hdfs-site.xml $HBASE_HOME/conf/
 ln -s $HADOOP_HOME/conf/mapred-site.xml $HBASE_HOME/conf/
 # Override JVM options
 cat >> $HBASE_HOME/conf/hbase-env.sh <<EOF
+export JAVA_HOME=/usr/local/jdk
+export HBASE_LOG_DIR=/mnt/hbase/logs
 export HBASE_MASTER_OPTS="-Xmx1000m -XX:+UseCompressedOops -XX:+UseConcMarkSweepGC -XX:+DoEscapeAnalysis -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-master-gc.log"
 export HBASE_REGIONSERVER_OPTS="-Xmx4000m -XX:+UseCompressedOops -XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=88 -XX:NewSize=128m -XX:MaxNewSize=128m -XX:+DoEscapeAnalysis -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-regionserver-gc.log"
 EOF

@@ -1,8 +1,8 @@
 options = {
-  :label => 'hbase-us-east-1-0.21-S-append-SNAPSHOT-x86_64', 
-  :availability_zone => 'us-east-1b',
+  :label => 'hbase-0.20-tm-3-x86_64', 
+  :availability_zone => 'us-east-1c',
   :num_regionservers => 3,
-  :security_group_prefix => 'secappend'
+  :owner_id => '801535628028'
 }
 cluster = @hcluster.new options
 cluster.launch
