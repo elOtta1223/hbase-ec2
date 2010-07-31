@@ -1031,7 +1031,7 @@ module Hadoop
       }
     end
 
-    def setup_master(master, stdout_handler = HCluster::echo_stdout, stderr_handler = HCluster::echo_stderr) 
+    def setup_master(master, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output)
       #cluster's dnsName is same as master's.
       @dnsName = master.dnsName
       @master = master
