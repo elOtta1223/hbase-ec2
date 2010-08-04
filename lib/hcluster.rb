@@ -1355,6 +1355,24 @@ module Hadoop
       status
     end
     
+    def HCluster::terminate
+      # Note: this terminates all instances but does not sync()
+      # any individual HCluster objects, so clusters will have
+      # old information about now-terminated instances.
+      # FIXME: add prompt.
+      puts "Terminating ALL instances owned by you (owner_id=#{@@owner_id})."
+
+      @aws_connection or (@aws_connection = AWS::EC2::Base.new(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY']))
+      @aws_connection or raise HClusterStateError,"Could not log you in to AWS: check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment."
+
+      @aws_connection.describe_instances.reservationSet.item.each do |ec2_instance_set|
+        ec2_instance_set.instancesSet.item.each {|instance|
+          puts "terminating instance: #{instance.instanceId} (#{instance.imageId})"
+          @@shared_base_object.terminate_instances :instance_id => instance.instanceId
+        }
+      end
+    end
+
     def to_s
       if (@state)
         retval = "HCluster (state='#{@state}'): #{@num_regionservers} regionserver#{((@numregionservers == 1) && '') || 's'}; #{@num_zookeepers} zookeeper#{((@num_zookeepers == 1) && '') || 's'}; hbase_version:#{options[:hbase_version]};"
