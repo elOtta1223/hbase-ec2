@@ -932,7 +932,12 @@ module Hadoop
           # get status of instance instance.instanceId.
           begin
             begin
-              instance_info = @aws_connection.describe_instances({:instance_id => instance.instanceId}).reservationSet.item[0].instancesSet.item[0]
+              begin
+                instance_info = @aws_connection.describe_instances({:instance_id => instance.instanceId}).reservationSet.item[0].instancesSet.item[0]
+              rescue AWS::Unavailable
+                status = "waiting"
+                puts "AWS::Unavailable: (Unable to process request, please retry shortly) - retrying."
+              end
               status = instance_info.instanceState.name
             rescue OpenSSL::SSL::SSLError
               puts "aws_connection.describe_instance() encountered an SSL error - retrying."
