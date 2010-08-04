@@ -4,6 +4,8 @@ require 'test/unit'
 $:.unshift File.join(File.dirname(__FILE__),"..", "lib")
 require 'TestDFSIO.rb'
 
+include Hadoop
+
 def dump_hash(hash)
   hash.keys.each { |key|
     puts "#{key} => #{hash[key]}"
