@@ -238,6 +238,7 @@ module Hadoop
       if options.size == 0 || (options.ami == nil && options.label == nil)
         #not enough info to create cluster: show documentation.
         initialize_print_usage
+        raise HClusterStartError, "required information missing: see usage information above."
         return nil
       end
 
