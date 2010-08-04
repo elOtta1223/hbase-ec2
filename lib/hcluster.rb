@@ -569,7 +569,11 @@ module Hadoop
         }
       }.merge(options)
 
-      imgs = HCluster.describe_images(options).imagesSet.item
+      begin
+        imgs = HCluster.describe_images(options).imagesSet.item
+        rescue NoMethodError
+        puts "No images found matching your options:\n#{pretty_print(options)}"
+      end
       if options[:output_fn]
         options.output_fn.call "label\t\t\t\tami\t\t\towner_id"
         options.output_fn.call "========================================================================="
