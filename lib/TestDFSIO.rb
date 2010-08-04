@@ -12,7 +12,6 @@ class TestDFSIO < HCluster
     stderr = ""
     stdout = ""
     retval_hash = {}
-    result_pairs = {}
     av_lines = []
     run_test("TestDFSIO -write -nrFiles #{nrFiles} -fileSize #{fileSize}",
              lambda{|line,ch|
@@ -34,7 +33,7 @@ class TestDFSIO < HCluster
              })
 
     av_section = av_lines.join("\n")
-
+    result_pairs = {}
     av_section.split(/\n/).each {|av_line|
       av_pair = av_line.split(/: /)
       if (av_pair[2])
