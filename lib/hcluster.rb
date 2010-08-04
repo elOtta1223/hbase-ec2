@@ -1027,7 +1027,7 @@ module Hadoop
 
         # if no zone specified by user, use the zone that AWS chose for the first
         # instance launched in the cluster (the first zookeeper).
-        @zone = @zks[0].placement['availabilityZone'] if !@zone
+        @zone = zk.placement['availabilityZone'] if !@zone
 
         if (@debug_level > 0)
           puts "zk dnsname: #{zk.dnsName}"
@@ -1038,7 +1038,7 @@ module Hadoop
         # so we can remove the ZOOKEEPER_QUORUM=.. from the following.
         HCluster::ssh_to(zk.dnsName,
                          "sh -c \"ZOOKEEPER_QUORUM=\\\"#{zookeeper_quorum}\\\" sh /var/tmp/hbase-ec2-init-zookeeper-remote.sh\"",
-                         HCluster::summarize_output,HCluster::summarize_output,
+                         stdout_handler,stderr_handler,
                          "[setup:zk:#{zk.dnsName}",
                          "]\n")
       }
