@@ -10,7 +10,7 @@ class TestHCluster < Test::Unit::TestCase
   @@security_group = "hdfs"
   @@num_zookeepers = 1
   @@num_regionservers = 3
-  @@cluster = HCluster::TestDFSIO.new({:ami => 'ami-fb7f9492',
+  @@cluster = HCluster::TestDFSIO.new({:ami => 'ami-b4739bdd',
                                         :security_group_prefix => @@security_group,
                                         :num_zookeepers => @@num_zookeepers,
                                         :num_regionservers => @@num_regionservers})
@@ -20,7 +20,7 @@ class TestHCluster < Test::Unit::TestCase
   end
 
   def teardown
-    @@cluster.terminate
+#    @@cluster.terminate
   end
 
   def test_run
