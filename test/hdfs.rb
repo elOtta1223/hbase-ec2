@@ -6,17 +6,12 @@ require 'TestDFSIO.rb'
 
 include Hadoop
 
-def dump_hash(hash)
-  hash.keys.each { |key|
-    puts "#{key} => #{hash[key]}"
-  }
-end
-
 class TestHCluster < Test::Unit::TestCase
   @@security_group = "hdfs"
   @@num_zookeepers = 1
   @@num_regionservers = 3
-  @@cluster = HCluster::TestDFSIO.new({:security_group_prefix => @@security_group,
+  @@cluster = HCluster::TestDFSIO.new({:ami => 'ami-fb7f9492',
+                                        :security_group_prefix => @@security_group,
                                         :num_zookeepers => @@num_zookeepers,
                                         :num_regionservers => @@num_regionservers})
 
@@ -30,7 +25,7 @@ class TestHCluster < Test::Unit::TestCase
 
   def test_run
     status = @@cluster.status
-    dump_hash(status)
+    pretty_print(status)
     assert("running" == status['state'])
     launchTime = status['launchTime']
     # second part of this disjunction is indended to only be true if launchTime is
