@@ -53,9 +53,9 @@ module Hadoop
       @@s3
     end
 
-    def Himage::upload_tar(label = "test", bucket = "ekoontz-tarballs",file="/Users/ekoontz/s3/sample.tar.gz")
+    def upload(bucket,file)
       filename = File.basename(file)
-      puts "storing '#{filename}' in s3 bucket '#{bucket}'.."
+      puts "storing '#{filename}' in s3 bucket '#{bucket}'..\n"
       @@s3.store filename, open(file), bucket,:access => :public_read
       puts "done."
     end
@@ -66,11 +66,13 @@ module Hadoop
 
     def initialize_himage_usage
       puts ""
-      puts "Himage.new"
-      puts "  options: (default)"
-      puts "   :label  (nil) (see HImage.list for a list of labels)"
+      puts "Himage.new usage"
+      puts "  options: (description) (default, if any)"
+      puts "   :tar_s3 (name of S3 bucket where tarfiles should be stored)"
+      puts "   :ami_s3 (name of S3 bucket where AMIs should be stored)"
+      puts "   :hadoop (full path to hadoop tar.gz archive)"
+      puts "   :hbase  (full path to hbase tar.gz archive)"
       puts ""
-      puts "Himage.list shows a list of possible :label values."
     end
 
     def initialize(options = {})
