@@ -20,7 +20,7 @@ class TestHCluster < Test::Unit::TestCase
   end
 
   def teardown
-#    @@cluster.terminate
+    @@cluster.terminate
   end
 
   def test_run
