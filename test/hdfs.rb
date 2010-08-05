@@ -41,8 +41,14 @@ class TestHCluster < Test::Unit::TestCase
     #FIX: add some tests for master..
 
     test_results = @@cluster.test
+
+    puts "test results: #{pretty_print(test_results['pairs'])}"
+
     assert(0 < test_results.size)
-    assert(10000 == test_results['Total MBytes processed'])
+
+    puts "checking total megabytes processed (should be 10000)..."
+
+    assert(10000 == test_results['pairs']['Total MBytes processed'].to_i)
   end
   
 end
