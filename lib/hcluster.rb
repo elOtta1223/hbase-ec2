@@ -1101,8 +1101,8 @@ module Hadoop
       if debug_level == "DEBUG"
         puts "<MASTER INIT>"
         puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
+        puts "</MASTER INIT>"
       end
-      puts "</MASTER INIT>"
       HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
                        stdout_handler,stderr_handler,
                        "[setup:master:#{master.dnsName}","]\n")
@@ -1122,9 +1122,11 @@ module Hadoop
         
         HCluster::scp_to(slave.dnsName,init_script,"/root/#{@@remote_init_script}")
         HCluster::ssh_to(slave.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-        puts "<SLAVE INIT>"
-        puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
-        puts "</SLAVE INIT>"
+        if debug_level == "DEBUG"
+          puts "<SLAVE INIT>"
+          puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
+          puts "</SLAVE INIT>"
+        end
         HCluster::ssh_to(slave.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
                          stdout_handler,stderr_handler,
                          "[setup:rs:#{slave.dnsName}","]\n")
