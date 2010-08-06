@@ -342,7 +342,6 @@ module Hadoop
       puts "   :debug_level  (@@debug_level)"
       puts "   :validate_images  (true)"
       puts "   :security_group_prefix (hcluster)"
-      puts "   :availability_zone (us-east-1c)"
       puts ""
       puts "Himage.list shows a list of possible :label values."
     end
@@ -352,8 +351,12 @@ module Hadoop
       if options.size == 0 || (options.ami == nil && options.label == nil)
         #not enough info to create cluster: show documentation.
         initialize_print_usage
-        raise HClusterStartError, "required information missing: see usage information above."
         return nil
+      end
+
+      if options[:availability_zone]
+        puts " ignoring :availability_zone - please pass to launch() instead."
+        options.delete(:availability_zone)
       end
 
       options = {
@@ -368,7 +371,6 @@ module Hadoop
         :debug_level => @@debug_level,
         :validate_images => true,
         :security_group_prefix => "hcluster",
-        :availability_zone => "us-east-1c"
       }.merge(options)
 
       
@@ -485,10 +487,7 @@ module Hadoop
       @slaves = []
       @aux = nil
       @ssh_input = []
-      
-      @zone = options[:availability_zone]
-      
-      #images
+            
       @zk_image_label = options[:zk_image_label]
       @master_image_label = options[:master_image_label]
       @slave_image_label = options[:slave_image_label]
@@ -688,8 +687,9 @@ module Hadoop
 
       begin
         imgs = HCluster.describe_images(options).imagesSet.item
-        rescue NoMethodError
-        puts "No images found matching your options:\n#{pretty_print(options)}"
+      rescue NoMethodError
+        puts "image could not be found matching search criteria:\n#{pretty_print(options)}"
+        return nil
       end
       if options[:output_fn]
         options.output_fn.call "label\t\t\t\tami\t\t\towner_id"
@@ -741,6 +741,15 @@ module Hadoop
         @@clusters[name] = HCluster.new(name)
       end
     end
+
+    def HCluster::launch_usage
+      puts ""
+      puts "HCluster.launch usage"
+      puts "  options: (description) (default, if any)"
+      puts "   :hbase_debug_level ('DEBUG')"
+      puts "   :availability_zone ('us-east-1c')"
+      puts ""
+    end
     
     def launch(options = {})
       if options[:debug] == true
@@ -748,9 +757,12 @@ module Hadoop
         options = {
           :stdout_handler => HCluster::echo_stdout,
           :stderr_handler => HCluster::echo_stderr,
-          :hbase_debug_level => 'DEBUG'
+          :hbase_debug_level => 'DEBUG',
+          :availability_zone => "us-east-1c"
         }.merge(options)
       end
+ 
+      @zone = options[:availability_zone]
 
       @state = "launching"
       
@@ -918,12 +930,7 @@ module Hadoop
           # get status of instance instance.instanceId.
           begin
             begin
-              begin
-                instance_info = @aws_connection.describe_instances({:instance_id => instance.instanceId}).reservationSet.item[0].instancesSet.item[0]
-              rescue AWS::Unavailable
-                status = "waiting"
-                puts "AWS::Unavailable: (Unable to process request, please retry shortly) - retrying."
-              end
+              instance_info = @aws_connection.describe_instances({:instance_id => instance.instanceId}).reservationSet.item[0].instancesSet.item[0]
               status = instance_info.instanceState.name
             rescue OpenSSL::SSL::SSLError
               puts "aws_connection.describe_instance() encountered an SSL error - retrying."
@@ -973,7 +980,9 @@ module Hadoop
       options[:key_name] = @zk_key_name
       options[:availability_zone] = @zone
       @zks = HCluster.do_launch(options,"zk",lambda{|zks|setup_zookeepers(zks,
-                                                                          options[:stdout_handler],options[:stderr_handler])})
+                                                                          options[:stdout_handler],
+                                                                          options[:stderr_handler],
+                                                                          options[:hbase_debug_level])})
     end
         
     def zookeeper_quorum
@@ -1022,7 +1031,8 @@ module Hadoop
       options[:key_name] = @rs_key_name
       options[:availability_zone] = @zone
       @slaves = HCluster.do_launch(options,"rs",lambda{|instances|setup_slaves(instances,
-                                                                               options[:stdout_handler],options[:stderr_handler],
+                                                                               options[:stdout_handler],
+                                                                               options[:stderr_handler],
                                                                                options[:extra_packages],
                                                                                options[:hbase_debug_level])})
     end
@@ -1043,7 +1053,7 @@ module Hadoop
     # so calling e.g. "mycluster.setupzookeepers" with no arguments will cause
     # the zookeeper setup to re-run. The effect on any existing zookeeper processes
     # depends on the specific behavior of hbase-ec2-init-zookeeper-remote.sh.
-    def setup_zookeepers(zks = @zks, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output)
+    def setup_zookeepers(zks = @zks, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, debug_level = "INFO")
       #when zookeepers are ready, copy info over to them..
       #for each zookeeper, copy ~/hbase-ec2/bin/hbase-ec2-init-zookeeper-remote.sh to zookeeper, and run it.
       HCluster::until_ssh_able(zks)
@@ -1068,8 +1078,8 @@ module Hadoop
       }
     end
 
-    def setup_master(master, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
-                     extra_packages = "", debug_level = "DEBUG")
+    def setup_master(master = @master, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
+                     extra_packages = "", debug_level = "INFO")
       #set cluster's dnsName to that of master.
       @dnsName = master.dnsName
       @master = master
@@ -1088,13 +1098,18 @@ module Hadoop
       HCluster::scp_to(master.dnsName,init_script,"/root/#{@@remote_init_script}")
       HCluster::ssh_to(master.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
       # NOTE : needs zookeeper quorum: requires zookeeper to have come up.
+      if debug_level == "DEBUG"
+        puts "<MASTER INIT>"
+        puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
+      end
+      puts "</MASTER INIT>"
       HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
                        stdout_handler,stderr_handler,
                        "[setup:master:#{master.dnsName}","]\n")
     end
     
-    def setup_slaves(slaves, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
-                     extra_packages = "", debug_level = "DEBUG")
+    def setup_slaves(slaves = @slaves, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
+                     extra_packages = "", debug_level = "INFO")
       init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
       #FIXME: requires that both master (master.dnsName) and zookeeper (zookeeper_quorum) to have come up.
       HCluster::until_ssh_able(slaves)
@@ -1107,9 +1122,13 @@ module Hadoop
         
         HCluster::scp_to(slave.dnsName,init_script,"/root/#{@@remote_init_script}")
         HCluster::ssh_to(slave.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+        puts "<SLAVE INIT>"
+        puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
+        puts "</SLAVE INIT>"
         HCluster::ssh_to(slave.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
                          stdout_handler,stderr_handler,
                          "[setup:rs:#{slave.dnsName}","]\n")
+
       }
     end
     
@@ -1433,7 +1452,7 @@ module Hadoop
         }
       end
     end
-
+    
     def to_s
       if (@state)
         retval = "HCluster (state='#{@state}'): #{@num_regionservers} regionserver#{((@numregionservers == 1) && '') || 's'}; #{@num_zookeepers} zookeeper#{((@num_zookeepers == 1) && '') || 's'}; hbase_version:#{options[:hbase_version]};"
