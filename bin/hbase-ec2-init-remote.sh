@@ -19,17 +19,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-set -x
-export JAVA_HOME=/usr/local/jdk1.6.0_20
-ln -s $JAVA_HOME /usr/local/jdk
 
 # Script that is run on each EC2 instance on boot. It is passed in the EC2 user
 # data, so should not exceed 16K in size.
+
+#FIXME: replace this shell script with a more
+# declarative statement of what we want
+# the just-started zookeeper's setup to look like,
+# using Whirr, Chef, Puppet, or some combination thereof.
+
+set -x
 
 MASTER_HOST=$1
 ZOOKEEPER_QUORUM=$2
 NUM_SLAVES=$3
 EXTRA_PACKAGES=$4
+LOG_SETTING=$5
+
+echo "Setting debug setting to ${LOG_SETTING}."
+
+export JAVA_HOME=/usr/local/jdk1.6.0_20
+ln -s $JAVA_HOME /usr/local/jdk
+
 SECURITY_GROUPS=`wget -q -O - http://169.254.169.254/latest/meta-data/security-groups`
 IS_MASTER=`echo $SECURITY_GROUPS | awk '{ a = match ($0, "-master$"); if (a) print "true"; else print "false"; }'`
 IS_AUX=`echo $SECURITY_GROUPS | awk '{ a = match ($0, "-aux$"); if (a) print "true"; else print "false"; }'`
@@ -98,21 +109,21 @@ EOF
 }
 
 # up file-max
-sysctl -w fs.file-max=32768
+sysctl -w fs.file-max=65535
 
 # up ulimits
-echo "root soft nofile 32768" >> /etc/security/limits.conf
-echo "root hard nofile 32768" >> /etc/security/limits.conf
+echo "root soft nofile 65535" >> /etc/security/limits.conf
+echo "root hard nofile 65535" >> /etc/security/limits.conf
+ulimit -n 65535
 
 # up epoll limits; ok if this fails, only valid for kernels 2.6.27+
-sysctl -w fs.epoll.max_user_instances=32768 > /dev/null 2>&1
+sysctl -w fs.epoll.max_user_instances=65535 > /dev/null 2>&1
 
 [ ! -f /etc/hosts ] &&  echo "127.0.0.1 localhost" > /etc/hosts
 echo "$HOST_IP $HOSTNAME" >> /etc/hosts
 
 # note kdc hostname
 echo -n "$MASTER_HOST" > /etc/tm-kdc-hostname
-
 
 # Extra packages
 
@@ -126,11 +137,12 @@ fi
 
 # Security setup
 # all servers need krb5 libraries
-yum -y install krb5-libs jakarta-commons-daemon-jsvc
+yum -y install jakarta-commons-daemon-jsvc
 [ -f $HADOOP_HOME/bin/jsvc ] || ln -s /usr/bin/jsvc $HADOOP_HOME/bin
 adduser hadoop
+groupadd supergroup
+adduser -G supergroup hbase
 if [ "$IS_MASTER" = "true" ]; then
-  yum -y install krb5-server
   cat > /var/kerberos/krb5kdc/kadm5.acl <<EOF
 */admin@HADOOP.LOCALDOMAIN    *
 EOF
@@ -214,7 +226,6 @@ add_client "hadoop/admin" $KDC_ADMIN_PASS $keytab $HOSTNAME
 chown hadoop:hadoop $keytab
 
 if [ "$IS_MASTER" = "true" ]; then
-  kadmin_setup $KDC_MASTER_PASS $KDC_ADMIN_PASS
   cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/$HOSTNAME
 fi
 
@@ -320,7 +331,7 @@ cat > $HADOOP_HOME/conf/hdfs-site.xml <<EOF
 </property>
 <property>
   <name>dfs.support.append</name>
-  <value>false</value>
+  <value>true</value>
 </property>
 <property>
   <name>dfs.datanode.handler.count</name>
@@ -469,7 +480,7 @@ export HADOOP_OPTS="$HADOOP_OPTS -XX:+UseCompressedOops"
 EOF
 # Update classpath to include HBase jars and config
 cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
-export HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/AgileJSON-2009-03-30.jar:$HBASE_HOME/lib/json.jar:$HBASE_HOME/lib/zookeeper-3.3.0.jar:$HBASE_HOME/conf"
+HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/zookeeper-3.3.1.jar:$HBASE_HOME/conf"
 EOF
 # Configure Hadoop for Ganglia
 cat > $HADOOP_HOME/conf/hadoop-metrics.properties <<EOF
@@ -524,36 +535,12 @@ cat > $HBASE_HOME/conf/hbase-site.xml <<EOF
   <value>100</value>
 </property>
 <property>
-  <name>hfile.block.cache.size</name>
-  <value>0.3</value>
-</property>
-<property>
-  <name>hbase.regionserver.global.memstore.upperLimit</name>
-  <value>0.3</value>
-</property>
-<property>
-  <name>hbase.regionserver.global.memstore.lowerLimit</name>
-  <value>0.25</value>
-</property>
-<property>
   <name>hbase.hregion.memstore.block.multiplier</name>
-  <value>4</value>
+  <value>3</value>
 </property>
 <property>
   <name>hbase.hstore.blockingStoreFiles</name>
   <value>15</value>
-</property>
-<property>
-  <name>dfs.replication</name>
-  <value>2</value>
-</property>
-<property>
-  <name>dfs.support.append</name>
-  <value>false</value>
-</property>
-<property>
-  <name>dfs.client.block.write.retries</name>
-  <value>20</value>
 </property>
 <property>
   <name>dfs.datanode.socket.write.timeout</name>
@@ -619,11 +606,12 @@ ln -s $HADOOP_HOME/conf/hdfs-site.xml $HBASE_HOME/conf/
 ln -s $HADOOP_HOME/conf/mapred-site.xml $HBASE_HOME/conf/
 # Override JVM options
 cat >> $HBASE_HOME/conf/hbase-env.sh <<EOF
-export HBASE_MASTER_OPTS="-Xmx1000m -XX:+UseCompressedOops -XX:+UseConcMarkSweepGC -XX:+DoEscapeAnalysis -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-master-gc.log"
-export HBASE_REGIONSERVER_OPTS="-Xmx4000m -XX:+UseCompressedOops -XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=88 -XX:NewSize=128m -XX:MaxNewSize=128m -XX:+DoEscapeAnalysis -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-regionserver-gc.log"
+export JAVA_HOME=/usr/local/jdk
+export HBASE_MASTER_OPTS="-Xmx1000m -XX:+UseConcMarkSweepGC -XX:NewSize=128m -XX:MaxNewSize=128m -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps -Xloggc:/mnt/hbase/logs/hbase-master-gc.log"
+export HBASE_REGIONSERVER_OPTS="-Xmx2000m -XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=88 -XX:NewSize=128m -XX:MaxNewSize=128m -XX:+AggressiveOpts -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps -Xloggc:/mnt/hbase/logs/hbase-regionserver-gc.log"
 EOF
 # Configure log4j
-sed -i -e 's/hadoop.hbase=DEBUG/hadoop.hbase=INFO/g' \
+sed -i -e "s/hadoop.hbase=DEBUG/hadoop.hbase=$5/g" \
     $HBASE_HOME/conf/log4j.properties
 # Configure HBase for Ganglia
 cat > $HBASE_HOME/conf/hadoop-metrics.properties <<EOF
@@ -653,11 +641,9 @@ if [ "$IS_MASTER" = "true" ]; then
   "$HADOOP_HOME"/bin/hadoop fs -chown hbase /hbase
   #</must be done after hadoop startup, and before hbase startup>
 
-  "$HBASE_HOME"/bin/hbase-daemon.sh start master
 else
     if [ "$IS_AUX" != "true" ]; then
 	"$HADOOP_HOME"/bin/hadoop-daemon.sh start datanode
-        "$HBASE_HOME"/bin/hbase-daemon.sh start regionserver
         "$HADOOP_HOME"/bin/hadoop-daemon.sh start tasktracker
     fi
 fi
