@@ -25,6 +25,10 @@ module Hadoop
 
     @@owner_id = ENV['AWS_ACCOUNT_ID'].gsub(/-/,'')
 
+    def Himage::owner_id
+      @@owner_id
+    end
+
     def owner_id
       @@owner_id
     end
@@ -60,6 +64,13 @@ module Hadoop
       puts "storing '#{filename}' in s3 bucket '#{bucket}'..\n"
       @@s3.store filename, open(file), bucket,:access => :public_read
       puts "done."
+    end
+
+    def Himage::myimages(options = {})
+      options = {
+        :owner_id => Himage::owner_id
+      }.merge(options)
+      Himage::list(options)
     end
 
     def Himage::list(options = {})
