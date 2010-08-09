@@ -62,7 +62,11 @@ module Hadoop
     def upload(bucket,file)
       filename = File.basename(file)
       puts "storing '#{filename}' in s3 bucket '#{bucket}'..\n"
-      @@s3.store filename, open(file), bucket,:access => :public_read
+      begin
+        @@s3.store filename, open(file), bucket,:access => :public_read
+      rescue 
+        raise "Upload of '#{file}' failed : please retry."
+      end
       puts "done."
     end
 
@@ -152,7 +156,9 @@ module Hadoop
       threads = []
       for file_to_upload in [@hbase,@hadoop]
         threads << Thread.new(file_to_upload) do |upload|
+          puts "uploading: '#{upload}'\n"
           upload @tar_s3, upload
+          puts "done with '#{upload}'.\n"
         end
       end
       threads.each { |thr|
