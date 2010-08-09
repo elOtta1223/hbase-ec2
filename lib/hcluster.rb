@@ -143,8 +143,8 @@ module Hadoop
         initialize_himage_usage
         raise HImageError, "required information missing: see usage information above."
       end
-
-      puts "You can now call 'create_image' on this object to build your image."
+      puts "Uploading tarballs required for building this image."
+      upload_tars
 
     end
 
