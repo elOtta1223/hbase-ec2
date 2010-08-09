@@ -236,11 +236,25 @@ module Hadoop
       # http://amazon-ec2.rubyforge.org/AWS/EC2/Base.html#register_image-instance_method does not
       # mention :name param (only :image_location).
       puts "registering image label: #{image_label} at manifest location: #{image_location}"
-      registered_image = @@shared_base_object.register_image({
-                                                               :name => image_label,
-                                                               :image_location => image_location,
-                                                               :description => "HBase Cluster Image: HBase Version: #{hbase_version}; Hadoop Version: #{hadoop_version}"
-                                                             })
+      begin
+        registered_image = @@shared_base_object.register_image({
+                                                                 :name => image_label,
+                                                                 :image_location => image_location,
+                                                                 :description => "HBase Cluster Image: HBase Version: #{hbase_version}; Hadoop Version: #{hadoop_version}"
+                                                               })
+      rescue AWS::InvalidManifest
+        "Could not create image due to an 'AWS::InvalidManifest' error."
+        if debug == true
+          puts "Not terminating image creator instance: '#{@image_creator.instanceId}' in case you want to inspect it."
+        else
+          @@shared_base_object.terminate_instances({
+                                                     :instance_id => @image_creator.instanceId
+                                                   })
+        end
+
+        raise AWS::InvalidManifest
+
+      end
       puts "image registered."
       if (!(debug == true))
         puts "shutting down image-builder #{@image_creator.instanceId}"
