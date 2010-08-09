@@ -170,7 +170,7 @@ module Hadoop
     end
 
     # ami-b00c34d9 => rightscale-us-east/RightImage_CentOS_5.4_x64_v5.4.6.2_Beta.manifest.xml
-    def create_image(base_ami_image = 'ami-b00ce4d9',arch = "x86_64",debug = "false")
+    def create_image(debug = "false", base_ami_image = 'ami-b00ce4d9', arch = "x86_64")
       #FIXME: check for existence of tarfile URLs: if they don't exist, either raise exception or call upload_tars().
       #..
       #FIXME: check for existence of @ami_s3 and @tar_s3 buckets.
