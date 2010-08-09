@@ -166,6 +166,7 @@ module Hadoop
           # ...
         end
       }
+      puts "Tarballs uploaded. You can now call 'build_image' on this object."
     end
 
     # ami-b00c34d9 => rightscale-us-east/RightImage_CentOS_5.4_x64_v5.4.6.2_Beta.manifest.xml
