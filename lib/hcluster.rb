@@ -184,8 +184,17 @@ module Hadoop
         keep_trying_to_upload(@hadoop,@tar_s3)
       end
       
-      hbase_thread.join
-      hadoop_thread.join
+      begin
+        hbase_thread.join
+      rescue NoMethodError => e
+        puts "ignoring 'NoMethodError' '(#{e.message})'."
+      end
+
+      begin
+        hadoop_thread.join
+      rescue NoMethodError => e
+        puts "ignoring 'NoMethodError' '(#{e.message})'."
+      end
 
       puts "Tarballs uploaded. You can now call 'create_image' on this object."
     end
