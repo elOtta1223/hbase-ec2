@@ -67,7 +67,7 @@ module Hadoop
       rescue RuntimeError => e
         raise "Upload of '#{file}' failed '(#{e.message})': please retry."
       end
-      puts "done."
+      puts "upload('#{bucket}','#{file}') is done."
     end
 
     def Himage::myimages(options = {})
@@ -147,29 +147,48 @@ module Hadoop
         initialize_himage_usage
         raise HImageError, "required information missing: see usage information above."
       end
-      puts "Uploading tarballs required for building this image."
-      upload_tars
+#      puts "Uploading tarballs required for building this image."
+#      upload_tars
 
     end
 
     def upload_tars
       threads = []
       for file_to_upload in [@hbase,@hadoop]
-        threads << Thread.new(file_to_upload) do |upload|
-          puts "uploading: '#{upload}'\n"
-          upload @tar_s3, upload
-          puts "done with '#{upload}'.\n"
+        puts "DOING FILE : '#{file_to_upload}'."
+        threads << Thread.new do
+  #      begin
+          puts "doing : basic_upload #{@tar_s3}, #{file_to_upload}.\n"
+          begin
+            retval = AWS::S3::S3Object.store(
+                                             File.basename(file_to_upload),
+                                             open(file_to_upload),
+                                             @tar_s3)
+          rescue Exception => e
+            puts "error loading: #{file_to_upload} to #{@tar_s3}: \n  '#{e.message}'. too bad.\n"
+            Thread.current.exit
+          else
+            puts "thread for '#{file_to_upload}' exiting successfully.\n"
+            Thread.current.exit
+          end
         end
       end
+      
+      puts "threads size are: #{threads.size}"
+
       threads.each { |thr|
         begin
+          puts "joining thread..."
           thr.join
+          puts "done joining."
         rescue IOError
           # (ignoring "IOError: stream closed")
           # ...
         rescue NoMethodError
           # (ignoring "NoMethodError: private method `readline' called for nil:NilClass")
           # ...
+        rescue RuntimeError => e
+          puts "got an error (here): #{e.message}"
         end
       }
       puts "Tarballs uploaded. You can now call 'build_image' on this object."
