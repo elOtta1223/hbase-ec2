@@ -185,13 +185,18 @@ module Hadoop
     end
 
     # ami-b00c34d9 => rightscale-us-east/RightImage_CentOS_5.4_x64_v5.4.6.2_Beta.manifest.xml
-    def create_image(debug = "false", base_ami_image = 'ami-b00ce4d9', arch = "x86_64")
+    def create_image(options = {})
+      options = {
+        :debug => false,
+        :base_ami_image => 'ami-b00ce4d9',
+        :arch => "x86_64"
+      }.merge(options)
       #FIXME: check for existence of tarfile URLs: if they don't exist, either raise exception or call upload_tars().
       #..
       #FIXME: check for existence of @ami_s3 and @tar_s3 buckets.
       #
 
-      image_label = "hbase-#{HCluster.label_to_hbase_version(File.basename(@hbase_filename))}-#{arch}"
+      image_label = "hbase-#{HCluster.label_to_hbase_version(File.basename(@hbase_filename))}-#{options[:arch]}"
 
       existing_image = Himage.find_owned_image :label => image_label
       if existing_image[0]
@@ -201,10 +206,10 @@ module Hadoop
 
 
       puts "Creating and registering image: #{image_label}"
-      puts "Starting a builder AMI with ID: #{base_ami_image}."
+      puts "Starting a builder AMI with ID: #{options[:base_ami_image]}."
       
       launch = HCluster::do_launch({
-                                     :ami => base_ami_image,
+                                     :ami => options[:base_ami_image],
                                      :key_name => "root",
                                      :instance_type => "m1.large"
                                    },"image-creator")
@@ -237,15 +242,15 @@ module Hadoop
 
       image_creator_hostname = @image_creator.dnsName
       sh = "sh -c \"ARCH=#{arch} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} /mnt/create-hbase-image-remote\""
-      puts "sh: #{sh}" if (debug == true)
+      puts "sh: #{sh}" if (options[:debug] == true)
 
       HCluster::ssh_to(image_creator_hostname,sh,
-                       HCluster.image_output_handler(debug),
-                       HCluster.image_output_handler(debug))
+                       HCluster.image_output_handler(options[:debug]),
+                       HCluster.image_output_handler(options[:debug]))
       puts(" .. done.")
 
       # Register image
-      image_location = "#{@ami_s3}/hbase-#{hbase_version}-#{arch}.manifest.xml"
+      image_location = "#{@ami_s3}/hbase-#{hbase_version}-#{options[:arch]}.manifest.xml"
 
       # FIXME: notify maintainers:
       # http://amazon-ec2.rubyforge.org/AWS/EC2/Base.html#register_image-instance_method does not
@@ -271,7 +276,7 @@ module Hadoop
 
       end
       puts "image registered."
-      if (!(debug == true))
+      if (!(options[:debug] == true))
         puts "shutting down image-builder #{@image_creator.instanceId}"
         @@shared_base_object.terminate_instances({
                                                    :instance_id => @image_creator.instanceId
