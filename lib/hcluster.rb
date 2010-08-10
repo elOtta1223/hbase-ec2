@@ -147,50 +147,40 @@ module Hadoop
         initialize_himage_usage
         raise HImageError, "required information missing: see usage information above."
       end
-#      puts "Uploading tarballs required for building this image."
-#      upload_tars
+      puts "Uploading tarballs required for building this image."
+      upload_tars
 
     end
 
-    def upload_tars
-      threads = []
-      for file_to_upload in [@hbase,@hadoop]
-        puts "DOING FILE : '#{file_to_upload}'."
-        threads << Thread.new do
-  #      begin
-          puts "doing : basic_upload #{@tar_s3}, #{file_to_upload}.\n"
-          begin
-            retval = AWS::S3::S3Object.store(
-                                             File.basename(file_to_upload),
-                                             open(file_to_upload),
-                                             @tar_s3)
-          rescue Exception => e
-            puts "error loading: #{file_to_upload} to #{@tar_s3}: \n  '#{e.message}'. too bad.\n"
-            Thread.current.exit
-          else
-            puts "thread for '#{file_to_upload}' exiting successfully.\n"
-            Thread.current.exit
-          end
+    def keep_trying_to_upload(file_to_upload,bucket)
+      uploaded = false
+      until uploaded == true
+        begin
+          retval = AWS::S3::S3Object.store(
+                                           File.basename(file_to_upload),
+                                           open(file_to_upload),
+                                           bucket)
+        rescue IOError => e
+          puts "IOError happened uploading '#{file_to_upload}' ('#{e.message}'): retrying.\n"
+        else
+          puts "#{file_to_upload} uploaded.\n"
+          uploaded = true
         end
       end
-      
-      puts "threads size are: #{threads.size}"
+    end
 
-      threads.each { |thr|
-        begin
-          puts "joining thread..."
-          thr.join
-          puts "done joining."
-        rescue IOError
-          # (ignoring "IOError: stream closed")
-          # ...
-        rescue NoMethodError
-          # (ignoring "NoMethodError: private method `readline' called for nil:NilClass")
-          # ...
-        rescue RuntimeError => e
-          puts "got an error (here): #{e.message}"
-        end
-      }
+    def upload_tars
+      hbase_thread = Thread.new do
+        keep_trying_to_upload(@hbase,@tar_s3)
+      end
+
+      hadoop_thread = Thread.new do
+        keep_trying_to_upload(@hadoop,@tar_s3)
+      end
+      
+      hbase_thread.join
+      hadoop_thread.join
+
       puts "Tarballs uploaded. You can now call 'build_image' on this object."
     end
 
