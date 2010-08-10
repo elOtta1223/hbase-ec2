@@ -203,8 +203,8 @@ module Hadoop
 
       existing_image = Himage.find_owned_image :label => image_label
       if existing_image[0]
-        puts "Existing image: #{existing_image[0].imageId} already registered for image name #{image_label}. Call HImage.deregister('#{existing_image[0].imageId}'), if desired."
-        return existing_image.imageId
+        puts "Existing image: '#{existing_image[0].imageId}' already registered for image named '#{image_label}'. Call Himage.deregister('#{existing_image[0].imageId}'), if desired."
+        return existing_image[0].imageId
       end
 
 
