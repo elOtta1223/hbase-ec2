@@ -21,7 +21,7 @@ class TestCreateImage < Test::Unit::TestCase
   end
 
   def test_image_exists
-    #check to make sure that th image we built (@@ami) exists in our images.
+    #check to make sure that that image we built (@@ami) exists in our images.
     images = Himage.myimages :output_fn => nil
 
     found = false
