@@ -94,14 +94,14 @@ module Hadoop
 
       if options[:output_fn]
         if (imgs)
-          options.output_fn.call "label\t\t\t\tami\t\t\towner_id\t\t\tregion"
-          options.output_fn.call "========================================================================="
+          options.output_fn.call "label\t\t\t\tami\t\t\towner_id\t\t\t"
+          options.output_fn.call "================================================================"
           debug = false
           imgs.each {|image| 
             if debug == true
               puts "#{pretty_print(image)}"
             end
-            options.output_fn.call "#{image.name}\t\t#{image.imageId}\t\t#{image.imageOwnerId}\t\t#{image.region}"
+            options.output_fn.call "#{image.name}\t\t#{image.imageId}\t\t#{image.imageOwnerId}"
           }
           options.output_fn.call ""
           return nil
