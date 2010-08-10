@@ -105,6 +105,9 @@ module Hadoop
           }
           options.output_fn.call ""
           return nil
+        else
+          # no output function given: simply return array of image structures.
+          imgs
         end
       end
 
@@ -192,7 +195,8 @@ module Hadoop
       options = {
         :debug => false,
         :base_ami_image => 'ami-b00ce4d9',
-        :arch => "x86_64"
+        :arch => "x86_64",
+        :delete_existing => false
       }.merge(options)
       #FIXME: check for existence of tarfile URLs: if they don't exist, either raise exception or call upload_tars().
       #..
@@ -203,10 +207,14 @@ module Hadoop
 
       existing_image = Himage.find_owned_image :label => image_label
       if existing_image[0]
-        puts "Existing image: '#{existing_image[0].imageId}' already registered for image named '#{image_label}'. Call Himage.deregister('#{existing_image[0].imageId}'), if desired."
-        return existing_image[0].imageId
+        if options[:delete_existing] == true
+          puts "Warning: de-registering existing AMI: '#{existing_image[0].imageId}'."
+          Himage.deregister(existing_image[0].imageId)
+        else
+          puts "Existing image: '#{existing_image[0].imageId}' already registered for image named '#{image_label}'. Call Himage.deregister('#{existing_image[0].imageId}'), if desired."
+          return existing_image[0].imageId
+        end
       end
-
 
       puts "Creating and registering image: #{image_label}"
       puts "Starting a builder AMI with ID: #{options[:base_ami_image]}."
