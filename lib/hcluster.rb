@@ -64,8 +64,8 @@ module Hadoop
       puts "storing '#{filename}' in s3 bucket '#{bucket}'..\n"
       begin
         @@s3.store filename, open(file), bucket,:access => :public_read
-      rescue 
-        raise "Upload of '#{file}' failed : please retry."
+      rescue RuntimeError => e
+        raise "Upload of '#{file}' failed '(#{e.message})': please retry."
       end
       puts "done."
     end
