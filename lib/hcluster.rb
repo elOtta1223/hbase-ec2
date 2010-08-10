@@ -237,11 +237,11 @@ module Hadoop
       hbase_version = HCluster.label_to_hbase_version(File.basename(@hbase_filename))
       hadoop_version = HCluster.label_to_hbase_version(File.basename(@hadoop_filename))
       lzo_url = "http://tm-files.s3.amazonaws.com/hadoop/lzo-linux-0.20-tm-2.tar.gz"
-      java_url = "http://mlai.jdk.s3.amazonaws.com/jdk-6u20-linux-#{arch}.bin"
+      java_url = "http://mlai.jdk.s3.amazonaws.com/jdk-6u20-linux-#{options[:arch]}.bin"
       ami_bucket = @ami_s3
 
       image_creator_hostname = @image_creator.dnsName
-      sh = "sh -c \"ARCH=#{arch} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} /mnt/create-hbase-image-remote\""
+      sh = "sh -c \"ARCH=#{options[:arch]} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} /mnt/create-hbase-image-remote\""
       puts "sh: #{sh}" if (options[:debug] == true)
 
       HCluster::ssh_to(image_creator_hostname,sh,
