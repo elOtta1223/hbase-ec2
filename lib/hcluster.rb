@@ -152,6 +152,8 @@ module Hadoop
 
     end
 
+    # Warning: uploaded tars must be world-readable for the build script (below)
+    # to access them. Do not store sensitive information in the tarballs.
     def keep_trying_to_upload(file_to_upload,bucket)
       uploaded = false
       until uploaded == true
@@ -159,7 +161,8 @@ module Hadoop
           retval = AWS::S3::S3Object.store(
                                            File.basename(file_to_upload),
                                            open(file_to_upload),
-                                           bucket)
+                                           bucket,
+                                           :access => :public_read)
         rescue IOError => e
           puts "IOError happened uploading '#{file_to_upload}' ('#{e.message}'): retrying.\n"
         else
