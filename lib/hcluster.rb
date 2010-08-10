@@ -268,7 +268,7 @@ module Hadoop
       rescue AWS::InvalidManifest
         "Could not create image due to an 'AWS::InvalidManifest' error."
         if options[:debug] == true
-          puts "Not terminating image creator instance: '#{@image_creator.instanceId}' in case you want to inspect it."
+          puts "Not terminating image creator instance: '#{@image_creator.dnsName}' in case you want to inspect it."
         else
           @@shared_base_object.terminate_instances({
                                                      :instance_id => @image_creator.instanceId
@@ -285,7 +285,7 @@ module Hadoop
                                                    :instance_id => @image_creator.instanceId
                                                  })
       else
-        puts "not shutting down image creator: #{@image_creator.dnsName}"
+        puts "not shutting down image creator: '#{@image_creator.dnsName}' in case you want to inspect it."
       end
       registered_image.imageId
     end

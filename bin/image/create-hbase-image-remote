@@ -68,15 +68,20 @@ chkconfig --levels 0123456 kadmin off
 echo "Installing Hadoop $HADOOP_VERSION."
 cd /usr/local
 wget -nv $HADOOP_URL
-tar xzf hadoop-$HADOOP_VERSION.tar.gz
-rm -f hadoop-$HADOOP_VERSION.tar.gz
+
+#should be:
+#tar xzf hadoop-$HADOOP_VERSION-SNAPSHOT.tar.gz
+tar xzf hadoop-$HADOOP_VERSION*.tar.gz
+rm -f hadoop-$HADOOP_VERSION*.tar.gz
+ln -s hadoop-$HADOOP_VERSION* hadoop-$HADOOP_VERSION
 
 # Install HBase
 echo "Installing HBase $HBASE_VERSION."
 cd /usr/local
 wget -nv $HBASE_URL
-tar xzf hbase-$HBASE_VERSION.tar.gz 
-rm -f hbase-$HBASE_VERSION.tar.gz
+tar xzf hbase-$HBASE_VERSION*.tar.gz 
+rm -f hbase-$HBASE_VERSION*.tar.gz
+ln -s hbase-$HABASE_VERSION* hbase-$HBASE_VERSION
 
 # Configure Hadoop
 echo "export JAVA_HOME=/usr/local/jdk${JAVA_VERSION}
