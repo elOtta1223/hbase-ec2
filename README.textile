@@ -26,6 +26,15 @@ export AWS_ACCOUNT_ID=...
 
 * A EC2 key pair called "root". This should be stored in your home directory in @~/.ec2/root.pem@.
 
+h2. Optional configuration
+
+You can set your preferred EC2 region with the EC2_URL environment variable; for example: 
+
+pre. 
+export EC2_URL="http://ec2.us-west-1.amazonaws.com"
+
+By default, @https://ec2.amazonaws.com@ will be used. You can see a complete list of available regions by using the @ec2-describe-regions@ function (see Amazon's "Region and Availability Zone FAQ":http://docs.amazonwebservices.com/AWSEC2/2010-06-15/UserGuide/index.html?FAQ_Regions_Availability_Zones.html).
+
 h1. Downloading hbase-ec2
 
 pre. 
@@ -76,9 +85,9 @@ pre.
 ...
 >> cluster.launch
 [launch:zk.........................]
-[setup:zk.]
+[setup:zk:ec2-184-73-5-47.compute-1.amazonaws.com...........]
 [launch:master.......................]
-[setup:master...................................................]
+[setup:master:ec2-184-73-53-56.compute-1.amazonaws.com...................................................]
 [launch:rs....................]
 [setup:rs:ec2-184-73-7-119.compute-1.amazonaws.com....................................]
 [setup:rs:ec2-184-73-12-72.compute-1.amazonaws.com....................................]
@@ -109,6 +118,3 @@ terminating regionserver: i-474aa92d
 terminating regionserver: i-454aa92f
 => {"name"=>"hdfs", "num_zookeepers"=>1, "master"=>"i-9344a7f9", "launchTime"=>"2010-06-22T23:22:13.000Z", "num_regionservers"=>5, "dnsName"=>"ec2-184-73-16-65.compute-1.amazonaws.com", "state"=>"terminated"}
 >> 
-
-
-
