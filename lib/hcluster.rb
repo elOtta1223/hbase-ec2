@@ -244,7 +244,7 @@ module Hadoop
       
       HCluster::until_ssh_able([@image_creator])
       image_creator_hostname = @image_creator.dnsName
-      puts "Copying scripts."
+      puts "Copying scripts.."
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/functions.sh","/mnt")
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/image/create-hbase-image-remote","/mnt")
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/image/ec2-run-user-data","/etc/init.d")
@@ -261,13 +261,14 @@ module Hadoop
 
       image_creator_hostname = @image_creator.dnsName
 
+      puts "Building image.."
+
       sh = "sh -c \"ARCH=#{options[:arch]} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} EC2_ROOT_SSH_KEY=\"#{File.basename EC2_ROOT_SSH_KEY}\" /mnt/create-hbase-image-remote\""
       puts "sh: #{sh}" if (options[:debug] == true)
 
       HCluster::ssh_to(image_creator_hostname,sh,
                        HCluster.image_output_handler(options[:debug]),
                        HCluster.image_output_handler(options[:debug]))
-      puts(" .. done.")
 
       # Register image
       image_location = "#{@ami_s3}/hbase-#{hbase_version}-#{options[:arch]}.manifest.xml"
@@ -291,11 +292,9 @@ module Hadoop
                                                      :instance_id => @image_creator.instanceId
                                                    })
         end
-
         raise AWS::InvalidManifest
-
       end
-      puts "image registered."
+      puts "create_image() finished - cleaning up.."
       if (!(options[:debug] == true))
         puts "shutting down image-builder #{@image_creator.instanceId}"
         @@shared_base_object.terminate_instances({
