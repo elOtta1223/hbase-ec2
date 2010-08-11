@@ -10,7 +10,7 @@ class TestHCluster < Test::Unit::TestCase
   @@security_group = "hdfs"
   @@num_zookeepers = 1
   @@num_regionservers = 3
-  @@cluster = HCluster::TestDFSIO.new({:ami => 'ami-b4739bdd',
+  @@cluster = HCluster::TestDFSIO.new({ :ami => 'ami-bcbe54d5',
                                         :security_group_prefix => @@security_group,
                                         :num_zookeepers => @@num_zookeepers,
                                         :num_regionservers => @@num_regionservers})
