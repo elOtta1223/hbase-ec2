@@ -224,8 +224,8 @@ module Hadoop
         end
       end
 
-      puts "Creating and registering image: #{image_label}"
-      puts "Starting a builder AMI with ID: #{options[:base_ami_image]}."
+      puts "Creating and registering new image named: #{image_label}"
+      puts "Starting a builder AMI with ID: #{options[:base_ami_image]}.."
       
       launch = HCluster::do_launch({
                                      :ami => options[:base_ami_image],
@@ -240,7 +240,6 @@ module Hadoop
       end
       
       image_creator_hostname = @image_creator.dnsName
-      puts "Started image creator: #{image_creator_hostname}"
       
       HCluster::until_ssh_able([@image_creator])
       image_creator_hostname = @image_creator.dnsName
@@ -1588,6 +1587,7 @@ module Hadoop
     
     def HCluster.until_ssh_able(instances,debug_level = @@debug_level)
       # do not return until every instance in the instances array is ssh-able.
+      # FIXME: make multithreaded: test M (M > 0) instances in M threads until all instances are tested.
       debug_level = 0
       instances.each {|instance|
         connected = false
