@@ -1416,14 +1416,6 @@ module Hadoop
         interactive = true
       end
       
-      if false
-        until command == "exit\n"
-          print "#{host}>"
-          command = gets
-        end
-        return
-      end
-      
       if begin_output
         print begin_output
         STDOUT.flush
