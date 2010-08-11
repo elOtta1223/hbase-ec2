@@ -70,6 +70,10 @@ module Hadoop
       puts "upload('#{bucket}','#{file}') is done."
     end
 
+    def Himage::myimages_print(options = {})
+      myimages(options) and nil
+    end
+
     def Himage::myimages(options = {})
       options = {
         :owner_id => Himage::owner_id
@@ -104,15 +108,10 @@ module Hadoop
             options.output_fn.call "#{image.name}\t\t#{image.imageId}\t\t#{image.imageOwnerId}"
           }
           options.output_fn.call ""
-          return nil
-        else
-          # no output function given: simply return array of image structures.
-          imgs
         end
       end
-
-      return imgs
-
+      # in either case return the array of image structures
+      imgs
     end
 
     def initialize_himage_usage
