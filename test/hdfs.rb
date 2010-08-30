@@ -6,11 +6,13 @@ require 'TestDFSIO.rb'
 
 include Hadoop
 
+# this test requires running the 'create_image.rb' test (in this same directory)
+# first, so that the image with the label 'hbase-0.89.20100621-bin-x86_64' exists.
 class TestHCluster < Test::Unit::TestCase
   @@security_group = "hdfs"
   @@num_zookeepers = 1
   @@num_regionservers = 3
-  @@cluster = HCluster::TestDFSIO.new({ :ami => 'ami-bcbe54d5',
+  @@cluster = HCluster::TestDFSIO.new({ :label => 'hbase-0.89.20100621-bin-x86_64',
                                         :security_group_prefix => @@security_group,
                                         :num_zookeepers => @@num_zookeepers,
                                         :num_regionservers => @@num_regionservers})
