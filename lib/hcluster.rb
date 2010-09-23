@@ -125,6 +125,8 @@ module Hadoop
       puts " ==== or === "
       puts "   :hadoop_url (path in S3 to hadoop tar.gz archive)"
       puts "   :hbase_url (path in S3 to hbase tar.gz archive)"
+      puts "   :tar_s3 (name of S3 bucket where tarfiles should be stored)"
+      puts "   :ami_s3 (name of S3 bucket where AMIs should be stored)"
       puts ""
     end
 
@@ -137,11 +139,13 @@ module Hadoop
         :hbase_url => nil
       }.merge(options)
 
-      if (options[:hadoop_url] and options[:hbase_url])
+      if (options[:hadoop_url] and options[:hbase_url] and options[:tar_s3] and options[:ami_s3])
         @hadoop_url = options[:hadoop_url]
         @hbase_url = options[:hbase_url]
         @hadoop_filename = File.basename(options[:hadoop_url])
         @hbase_filename = File.basename(options[:hbase_url])
+        @tar_s3 = options[:tar_s3]
+        @ami_s3 = options[:ami_s3]
       else
         if options[:hbase] && options[:hadoop] && options[:tar_s3] && options[:ami_s3]
           # verify existence of these two files.
@@ -149,10 +153,10 @@ module Hadoop
           raise "Hadoop tarfile: #{options[:hadoop]} does not exist or is not readable" unless File.readable? options[:hadoop]
           @hadoop = options[:hadoop]
           @hbase = options[:hbase]
-          @hadoop_filename = File.basename(options[:hadoop])
-          @hbase_filename = File.basename(options[:hbase])
           @tar_s3 = options[:tar_s3]
           @ami_s3 = options[:ami_s3]
+          @hadoop_filename = File.basename(options[:hadoop])
+          @hbase_filename = File.basename(options[:hbase])
           @hadoop_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hadoop_filename}"
           @hbase_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hbase_filename}"
         else
@@ -163,6 +167,8 @@ module Hadoop
         puts "Uploading tarballs required for building this image."
         upload_tars
       end
+
+
     end
 
     # Warning: uploaded tars must be world-readable for the build script (below)
