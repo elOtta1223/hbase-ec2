@@ -122,6 +122,9 @@ module Hadoop
       puts "   :ami_s3 (name of S3 bucket where AMIs should be stored)"
       puts "   :hadoop (full path to hadoop tar.gz archive)"
       puts "   :hbase  (full path to hbase tar.gz archive)"
+      puts " ==== or === "
+      puts "   :hadoop_url (path in S3 to hadoop tar.gz archive)"
+      puts "   :hbase_url (path in S3 to hbase tar.gz archive)"
       puts ""
     end
 
@@ -129,29 +132,37 @@ module Hadoop
       @shared_base_object = @@shared_base_object
       @owner_id = @@owner_id
       options = {
-        :owner_id => @@owner_id
+        :owner_id => @@owner_id,
+        :hadoop_url => nil,
+        :hbase_url => nil
       }.merge(options)
 
-      if options[:hbase] && options[:hadoop] && options[:tar_s3] && options[:ami_s3]
-        # verify existence of these two files.
-        raise "HBase tarfile: #{options[:hbase]} does not exist or is not readable" unless File.readable? options[:hbase]
-        raise "Hadoop tarfile: #{options[:hadoop]} does not exist or is not readable" unless File.readable? options[:hadoop]
-        @hadoop = options[:hadoop]
-        @hbase = options[:hbase]
-        @hadoop_filename = File.basename(options[:hadoop])
-        @hbase_filename = File.basename(options[:hbase])
-        @tar_s3 = options[:tar_s3]
-        @ami_s3 = options[:ami_s3]
-        @hadoop_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hadoop_filename}"
-        @hbase_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hbase_filename}"
+      if (options[:hadoop_url] and options[:hbase_url])
+        @hadoop_url = options[:hadoop_url]
+        @hbase_url = options[:hbase_url]
+        @hadoop_filename = File.basename(options[:hadoop_url])
+        @hbase_filename = File.basename(options[:hbase_url])
       else
-        #not enough options: show usage and exit.
-        initialize_himage_usage
-        raise HImageError, "required information missing: see usage information above."
+        if options[:hbase] && options[:hadoop] && options[:tar_s3] && options[:ami_s3]
+          # verify existence of these two files.
+          raise "HBase tarfile: #{options[:hbase]} does not exist or is not readable" unless File.readable? options[:hbase]
+          raise "Hadoop tarfile: #{options[:hadoop]} does not exist or is not readable" unless File.readable? options[:hadoop]
+          @hadoop = options[:hadoop]
+          @hbase = options[:hbase]
+          @hadoop_filename = File.basename(options[:hadoop])
+          @hbase_filename = File.basename(options[:hbase])
+          @tar_s3 = options[:tar_s3]
+          @ami_s3 = options[:ami_s3]
+          @hadoop_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hadoop_filename}"
+          @hbase_url = "http://#{@tar_s3}.s3.amazonaws.com/#{@hbase_filename}"
+        else
+          #not enough options: show usage and exit.
+          initialize_himage_usage
+          raise HImageError, "required information missing: see usage information above."
+        end
+        puts "Uploading tarballs required for building this image."
+        upload_tars
       end
-      puts "Uploading tarballs required for building this image."
-      upload_tars
-
     end
 
     # Warning: uploaded tars must be world-readable for the build script (below)
@@ -175,6 +186,7 @@ module Hadoop
     end
 
     def upload_tars
+      puts "starting upload..."
       hbase_thread = Thread.new do
         keep_trying_to_upload(@hbase,@tar_s3)
       end
