@@ -10,4 +10,5 @@ options = {
 }
 
 builder = Himage.new options
-builder.create_image :debug => true
+builder.create_image :debug => true, :delete_existing => true
+
