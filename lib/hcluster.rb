@@ -281,8 +281,11 @@ module Hadoop
       puts "Building image.."
 
       sh = "sh -c \"ARCH=#{options[:arch]} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} EC2_ROOT_SSH_KEY=\"#{File.basename EC2_ROOT_SSH_KEY}\" /mnt/create-hbase-image-remote\""
-      #hide AWS_SECRET_ACCESS_KEY from output
-      print_sh = sh.gsub(/AWS_SECRET_ACCESS_KEY=[^ ]+/,'AWS_SECRET_ACCESS_KEY=(hidden)')
+      #hide sensitive Amazon credential info from console output.
+      print_sh = sh
+      print_sh = print_sh.gsub(/AWS_SECRET_ACCESS_KEY=[^ ]+/,'AWS_SECRET_ACCESS_KEY=(hidden)')
+      print_sh = print_sh.gsub(/AWS_ACCESS_KEY_ID=[^ ]+/,'AWS_ACCESS_KEY_ID=(hidden)')
+      print_sh = print_sh.gsub(/AWS_ACCOUNT_ID=[^ ]+/,'AWS_ACCOUNT_ID=(hidden)')
 
       puts "sh: #{print_sh}" if (options[:debug] == true)
 
