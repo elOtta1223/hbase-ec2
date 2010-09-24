@@ -281,7 +281,10 @@ module Hadoop
       puts "Building image.."
 
       sh = "sh -c \"ARCH=#{options[:arch]} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} EC2_ROOT_SSH_KEY=\"#{File.basename EC2_ROOT_SSH_KEY}\" /mnt/create-hbase-image-remote\""
-      puts "sh: #{sh}" if (options[:debug] == true)
+      #hide AWS_SECRET_ACCESS_KEY from output
+      print_sh = sh.gsub(/AWS_SECRET_ACCESS_KEY=[^ ]+/,'AWS_SECRET_ACCESS_KEY=(hidden)')
+
+      puts "sh: #{print_sh}" if (options[:debug] == true)
 
       HCluster::ssh_to(image_creator_hostname,sh,
                        HCluster.image_output_handler(options[:debug]),
@@ -414,6 +417,10 @@ module Hadoop
     
     # used for creating hbase images.
     @@default_base_ami_image = "ami-f61dfd9f"   # ec2-public-images/fedora-8-x86_64-base-v1.10.manifest.xml
+    if !ENV['AWS_ACCOUNT_ID']
+      raise HClusterStartError, "Could not launch image builder: AWS_ACCOUNT_ID not set in your environment."
+    end
+
     @@owner_id = ENV['AWS_ACCOUNT_ID'].gsub(/-/,'')
     
     def HCluster::owner_id
