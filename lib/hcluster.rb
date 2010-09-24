@@ -267,8 +267,8 @@ module Hadoop
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/image/ec2-run-user-data","/etc/init.d")
       
       # Copy private key and certificate (for bundling image)
-      HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt")
-      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt")
+      HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt/root.pem")
+      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt/cert.pem")
 
       hbase_version = HCluster.label_to_hbase_version(File.basename(@hbase_filename))
       hadoop_version = HCluster.label_to_hbase_version(File.basename(@hadoop_filename))
