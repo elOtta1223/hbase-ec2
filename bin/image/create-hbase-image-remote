@@ -138,8 +138,6 @@ cd ~root
 # Don't need to delete .bash_history since it isn't written until exit.
 df -h
 
-set -x
-
 ec2-bundle-vol -d /mnt -k /mnt/$EC2_ROOT_SSH_KEY -c /mnt/cert.pem -u $AWS_ACCOUNT_ID -s 3072 -p hbase-$HBASE_VERSION-$arch -r $arch
 
 ec2-upload-bundle --access-key $AWS_ACCESS_KEY_ID --secret-key $AWS_SECRET_ACCESS_KEY  --bucket $S3_BUCKET --manifest /mnt/hbase-$HBASE_VERSION-$arch.manifest.xml 
