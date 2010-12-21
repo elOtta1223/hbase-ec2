@@ -10,6 +10,12 @@ require 'aws/s3'
 
 ROOT_DIR   = File.dirname(__FILE__) + '/..'
 
+if ENV['AWS_ENDPOINT'] != nil
+  ENDPOINT = ENV['AWS_ENDPOINT']
+else
+  ENDPOINT = "ec2.amazonaws.com"
+end
+
 def pretty_print(hash)
   retval = ""
   hash.keys.each{|key|
@@ -35,9 +41,10 @@ module Hadoop
 
     begin
       @@shared_base_object = AWS::EC2::Base.new({
-                                                  :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
-                                                  :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY']
-                                                })
+          :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
+          :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY'],
+          :server => ENDPOINT
+        })
     rescue
       puts "ooops..maybe you didn't define AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY? "
     end
@@ -46,9 +53,10 @@ module Hadoop
 
     if !(@@s3.connected?)
       @@s3.establish_connection!(
-                                 :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
-                                 :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY']
-                                 )
+          :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
+          :secret_access_key => ENV['AWS_SECRET_ACCESS_KEY'],
+          :server => ENDPOINT
+        )
     end
 
     def list
@@ -267,8 +275,8 @@ module Hadoop
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/image/ec2-run-user-data","/etc/init.d")
       
       # Copy private key and certificate (for bundling image)
-      HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt/root.pem")
-      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt/cert.pem")
+      HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt")
+      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt")
 
       hbase_version = HCluster.label_to_hbase_version(File.basename(@hbase_filename))
       hadoop_version = HCluster.label_to_hbase_version(File.basename(@hadoop_filename))
@@ -281,13 +289,7 @@ module Hadoop
       puts "Building image.."
 
       sh = "sh -c \"ARCH=#{options[:arch]} HBASE_VERSION=#{hbase_version} HADOOP_VERSION=#{hadoop_version} HBASE_FILE=#{@hbase_filename} HBASE_URL=#{@hbase_url} HADOOP_URL=#{@hadoop_url} LZO_URL=#{lzo_url} JAVA_URL=#{java_url} AWS_ACCOUNT_ID=#{@@owner_id} S3_BUCKET=#{@ami_s3} AWS_SECRET_ACCESS_KEY=#{ENV['AWS_SECRET_ACCESS_KEY']} AWS_ACCESS_KEY_ID=#{ENV['AWS_ACCESS_KEY_ID']} EC2_ROOT_SSH_KEY=\"#{File.basename EC2_ROOT_SSH_KEY}\" /mnt/create-hbase-image-remote\""
-      #hide sensitive Amazon credential info from console output.
-      print_sh = sh
-      print_sh = print_sh.gsub(/AWS_SECRET_ACCESS_KEY=[^ ]+/,'AWS_SECRET_ACCESS_KEY=(hidden)')
-      print_sh = print_sh.gsub(/AWS_ACCESS_KEY_ID=[^ ]+/,'AWS_ACCESS_KEY_ID=(hidden)')
-      print_sh = print_sh.gsub(/AWS_ACCOUNT_ID=[^ ]+/,'AWS_ACCOUNT_ID=(hidden)')
-
-      puts "sh: #{print_sh}" if (options[:debug] == true)
+      puts "sh: #{sh}" if (options[:debug] == true)
 
       HCluster::ssh_to(image_creator_hostname,sh,
                        HCluster.image_output_handler(options[:debug]),
@@ -308,16 +310,24 @@ module Hadoop
                                                                })
       rescue AWS::InvalidManifest
         "Could not create image due to an 'AWS::InvalidManifest' error."
-        @@shared_base_object.terminate_instances({
-                                                   :instance_id => @image_creator.instanceId
-                                                 })
+        if options[:debug] == true
+          puts "Not terminating image creator instance: '#{@image_creator.dnsName}' in case you want to inspect it."
+        else
+          @@shared_base_object.terminate_instances({
+                                                     :instance_id => @image_creator.instanceId
+                                                   })
+        end
         raise AWS::InvalidManifest
       end
       puts "create_image() finished - cleaning up.."
-      puts "shutting down image-builder #{@image_creator.instanceId}"
-      @@shared_base_object.terminate_instances({
-                                                 :instance_id => @image_creator.instanceId
-                                               })
+      if (!(options[:debug] == true))
+        puts "shutting down image-builder #{@image_creator.instanceId}"
+        @@shared_base_object.terminate_instances({
+                                                   :instance_id => @image_creator.instanceId
+                                                 })
+      else
+        puts "not shutting down image creator: '#{@image_creator.dnsName}' in case you want to inspect it."
+      end
       registered_image.imageId
     end
 
@@ -412,22 +422,12 @@ module Hadoop
     
     # used for creating hbase images.
     @@default_base_ami_image = "ami-f61dfd9f"   # ec2-public-images/fedora-8-x86_64-base-v1.10.manifest.xml
-    if !ENV['AWS_ACCOUNT_ID']
-      raise HClusterStartError, "Could not launch image builder: AWS_ACCOUNT_ID not set in your environment."
-    end
-
     @@owner_id = ENV['AWS_ACCOUNT_ID'].gsub(/-/,'')
     
     def HCluster::owner_id
       @@owner_id
     end
 
-
-    #architectures: either "x86_64" or "i386".
-    @@zk_arch = "x86_64"
-    @@master_arch = "x86_64"
-    @@slave_arch = "x86_64"
-    
     @@debug_level = 0
     
     # I feel like the describe_images method should be a class,
@@ -437,16 +437,17 @@ module Hadoop
     # so hopefully, no race conditions are possible.
     begin
       @@shared_base_object = AWS::EC2::Base.new({
-                                                  :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
-                                                  :secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY']
-                                                })
+          :access_key_id => ENV['AWS_ACCESS_KEY_ID'],
+          :secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'],
+          :server => ENDPOINT
+        })
     rescue
       puts "ooops..maybe you didn't define AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY? "
   end
     
     attr_reader :zks, :master, :slaves, :aux, :zone, :zk_image_label,
     :master_image_label, :slave_image_label, :aux_image_label, :owner_id,
-    :image_creator,:options,:hbase_version,:aws_connection
+    :image_creator,:options,:hbase_version,:hbase_debug_level, :aws_connection
     
     def initialize_print_usage
       puts ""
@@ -457,11 +458,10 @@ module Hadoop
       puts "   :hbase_version (ENV['HBASE_VERSION'])"
       puts "   :num_regionservers  (3)"
       puts "   :num_zookeepers  (1)"
-      puts "   :launch_aux  (false)"
-      puts "   :zk_arch  (x86_64)"
-      puts "   :master_arch  (x86_64)"
-      puts "   :slave_arch  (x86_64)"
-      puts "   :debug_level  (@@debug_level)"
+      puts "   :num_aux  (0)"
+      puts "   :key_name (root)"
+      puts "   :debug_level (@@debug_level)"
+      puts "   :hbase_debug_level (INFO)"
       puts "   :validate_images  (true)"
       puts "   :security_group_prefix (hcluster)"
       puts ""
@@ -486,17 +486,17 @@ module Hadoop
         :hbase_version => ENV['HBASE_VERSION'],
         :num_regionservers => 3,
         :num_zookeepers => 1,
-        :launch_aux => false,
-        :zk_arch => "x86_64",
-        :master_arch => "x86_64",
-        :slave_arch => "x86_64",
+        :num_aux => 0,
+        :arch => "x86_64",
         :key_name => "root",
         :debug_level => @@debug_level,
+        :hbase_debug_level => 'DEBUG',
         :validate_images => true,
         :security_group_prefix => "hcluster",
       }.merge(options)
 
-      
+      @debug_level = options[:debug_level]
+
       @ami_owner_id = @@owner_id
       if options[:owner_id]
         @ami_owner_id = options[:owner_id]
@@ -544,9 +544,9 @@ module Hadoop
       else
         if options[:hbase_version]
           options = {
-            :zk_image_label => "hbase-#{options[:hbase_version]}-#{options[:zk_arch]}",
-            :master_image_label => "hbase-#{options[:hbase_version]}-#{options[:master_arch]}",
-            :slave_image_label => "hbase-#{options[:hbase_version]}-#{options[:slave_arch]}",
+            :zk_image_label => "hbase-#{options[:hbase_version]}-#{options[:arch]}",
+            :master_image_label => "hbase-#{options[:hbase_version]}-#{options[:arch]}",
+            :slave_image_label => "hbase-#{options[:hbase_version]}-#{options[:arch]}",
           }.merge(options)
         else
           # User has no HBASE_VERSION defined, so check my images and use the first one.
@@ -584,12 +584,7 @@ module Hadoop
       # remove dashes so that describe_images() can find images owned by this owner.
       @@owner_id = ENV['AWS_ACCOUNT_ID'].gsub(/-/,'')
       
-      super(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'])
-      
-      #architectures: either "x86_64" or "i386".
-      @zk_arch = "x86_64"
-      @master_arch = "x86_64"
-      @slave_arch = "x86_64"
+      super(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'],:server => ENDPOINT)
       
       #for debugging
       @options = options
@@ -600,16 +595,17 @@ module Hadoop
       
       @num_regionservers = options[:num_regionservers]
       @num_zookeepers = options[:num_zookeepers]
-      @launch_aux = options[:launch_aux]
+      @num_aux = options[:num_aux]
       @key_name = options[:key_name]
       @debug_level = options[:debug_level]
+      @hbase_debug_level = options[:hbase_debug_level]
 
       @@clusters.push self
       
       @zks = []
       @master = nil
       @slaves = []
-      @aux = nil
+      @aux = []
       @ssh_input = []
             
       @zk_image_label = options[:zk_image_label]
@@ -644,26 +640,35 @@ module Hadoop
         @zk_security_group = @security_group_prefix + "-zk"
         @rs_security_group = @security_group_prefix
         @master_security_group = @security_group_prefix + "-master"
-        if options[:launch_aux] == true
-          @aux_security_group = @security_group_prefix + "-aux"
-        end
+        @aux_security_group = @security_group_prefix + "-aux"
       else
         @zk_security_group = @security_group_prefix
         @rs_security_group = @security_group_prefix
         @master_security_group = @security_group_prefix
-        if options[:launch_aux] == true
-          @aux_security_group = @security_group_prefix
-        end
+        @aux_security_group = @security_group_prefix
       end
       
       #machine instance types
-      @zk_instance_type = "m1.large"
-      #    @zk_instance_type = "c1.xlarge"
-      @rs_instance_type = "c1.xlarge"
-      @master_instance_type = "c1.xlarge"
-      # @zk_instance_type = "m1.large"
-      # @rs_instance_type = "m1.large"
-      # @master_instance_type = "m1.large"
+      if options[:zk_instance_type] != nil
+        @zk_instance_type = options[:zk_instance_type]
+      else
+        @zk_instance_type = "m1.large"
+      end
+      if options[:rs_instance_type] != nil
+        @rs_instance_type = options[:rs_instance_type]
+      else
+        @rs_instance_type = "m1.large"
+      end
+      if options[:aux_instance_type] != nil
+        @aux_instance_type = options[:aux_instance_type]
+      else
+        @aux_instance_type = "m1.large"
+      end
+      if options[:master_instance_type] != nil
+        @master_instance_type = options[:master_instance_type]
+      else
+        @master_instance_type = "m1.large"
+      end
       @state = "Initialized"
       
       sync
@@ -682,13 +687,11 @@ module Hadoop
       retval['state'] = @state
       retval['num_zookeepers'] = @num_zookeepers
       retval['num_regionservers'] = @num_regionservers
+      retval['num_aux'] = @num_aux
       retval['launchTime'] = @launchTime
       retval['dnsName'] = @dnsName
       if @master
         retval['master'] = @master.instanceId
-      end
-      if @aux
-        retval['aux'] = @aux.instanceId
       end
       retval
     end
@@ -705,7 +708,8 @@ module Hadoop
       zookeepers = 0
       @zks = []
       @slaves = []
-      
+      @aux = []
+
       if !describe_instances.reservationSet
         #no instances yet (even terminated ones have been cleaned up)
         return self.status
@@ -714,33 +718,36 @@ module Hadoop
       describe_instances.reservationSet.item.each do |ec2_instance_set|
         security_group = ec2_instance_set.groupSet.item[0].groupId
         if (security_group == @security_group_prefix)
-        slaves = ec2_instance_set.instancesSet.item
-          slaves.each {|rs|
-            if (rs.instanceState.name != 'terminated')
-              @slaves.push(rs)
-            end
-          }
+        instances = ec2_instance_set.instancesSet.item
+        instances.each {|inst|
+          if (inst.instanceState.name != 'terminated')
+            @slaves.push(inst)
+          end
+        }
         else
           if (security_group == (@security_group_prefix + "-zk"))
-            zks = ec2_instance_set.instancesSet.item
-            zks.each {|zk|
-              if (zk['instanceState']['name'] != 'terminated')
-                @zks.push(zk)
+            instances = ec2_instance_set.instancesSet.item
+            instances.each {|inst|
+              if (inst['instanceState']['name'] != 'terminated')
+                @zks.push(inst)
               end
           }
           else
             if (security_group == (@security_group_prefix + "-master"))
               if ec2_instance_set.instancesSet.item[0].instanceState.name != 'terminated'
                 @master = ec2_instance_set.instancesSet.item[0]
-              @state = @master.instanceState.name
+                @state = @master.instanceState.name
                 @dnsName = @master.dnsName
                 @launchTime = @master.launchTime
               end
             else
               if (security_group == (@security_group_prefix + "-aux"))
-                if ec2_instance_set.instancesSet.item[0].instanceState.name != 'terminated'
-                  @aux = ec2_instance_set.instancesSet.item[0]
+                instances = ec2_instance_set.instancesSet.item
+                instances.each {|inst|
+                if (inst['instanceState']['name'] != 'terminated')
+                  @aux.push(inst)
                 end
+              }
               end
             end
           end
@@ -754,6 +761,10 @@ module Hadoop
       
       if (@slaves.size > 0)
         @num_regionservers = @slaves.size
+      end
+      
+      if (@aux.size > 0)
+        @num_aux = @aux.size
       end
       
       self.status
@@ -868,7 +879,7 @@ module Hadoop
       puts ""
       puts "HCluster.launch usage"
       puts "  options: (description) (default, if any)"
-      puts "   :hbase_debug_level ('DEBUG')"
+      puts "   :hbase_debug_level ('INFO')"
       puts "   :availability_zone ('us-east-1c')"
       puts "   :key_name ('root')"
       puts ""
@@ -876,24 +887,39 @@ module Hadoop
     
     def launch(options = {})
       if options[:debug] == true
-        puts "running with debugging."
         options = {
           :stdout_handler => HCluster::echo_stdout,
-          :stderr_handler => HCluster::echo_stderr,
-          :hbase_debug_level => 'DEBUG',
-          :availability_zone => "us-east-1c"
+          :stderr_handler => HCluster::echo_stderr
         }.merge(options)
+      else
       end
- 
+      debug_level = @@debug_level
+      debug_level = options[:debug_level] if options[:debug_level]
+
       @zone = options[:availability_zone]
 
       @state = "launching"
-      
+
+      if debug_level > 0
+        puts("Checking security groups");
+      end
       init_hbase_cluster_secgroups
+      if debug_level > 0
+        puts("Launching zookeepers");
+      end
       launch_zookeepers(options)
+      if debug_level > 0
+        puts("Launching master");
+      end
       launch_master(options)
+      if debug_level > 0
+        puts("Launching slaves");
+      end
       launch_slaves(options)
-      if @launch_aux
+      if (@num_aux > 0)
+        if debug_level > 0
+          puts ("Launching auxiliary instances");
+        end
         launch_aux(options)
       end
       
@@ -914,8 +940,8 @@ module Hadoop
     def setup_kerberized_hbase
       ssh("cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/#{master.privateDnsName.downcase}; bin/hadoop fs -mkdir /hbase; bin/hadoop fs -chown hbase /hbase")
       ssh("/usr/local/hbase-*/bin/hbase-daemon.sh start master")
-      slaves.each {|slave|
-        ssh_to(slave.dnsName, "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver")
+      slaves.each {|inst|
+        ssh_to(inst.dnsName, "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver")
       }
     end
 
@@ -942,46 +968,39 @@ module Hadoop
         end
       }
       
-      if (found_aux == false && options[:launch_aux] == true)
-        puts "creating new security group: #{@security_group_prefix}-aux.."
+      if (found_aux == false)
+        puts "creating new security group: #{@security_group_prefix}-aux"
         create_security_group({
                                 :group_name => "#{@security_group_prefix}-aux",
                                 :group_description => "Group for HBase Auxiliaries."
                               })
-        puts "..done"
       end
       
       if (found_rs == false) 
-        puts "creating new security group: #{@security_group_prefix}.."
+        puts "creating new security group: #{@security_group_prefix}"
         create_security_group({
                                 :group_name => "#{@security_group_prefix}",
                                 :group_description => "Group for HBase Slaves."
                               })
-        puts "..done"
       end
       
       if (found_master == false) 
-        puts "creating new security group: #{@security_group_prefix}-master.."
+        puts "creating new security group: #{@security_group_prefix}-master"
         create_security_group({
                                 :group_name => "#{@security_group_prefix}-master",
                                 :group_description => "Group for HBase Master."
                               })
-        puts "..done"
       end
       
       if (found_zk == false) 
-        puts "creating new security group: #{@security_group_prefix}-zk.."
+        puts "creating new security group: #{@security_group_prefix}-zk"
         create_security_group({
                                 :group_name => "#{@security_group_prefix}-zk",
                                 :group_description => "Group for HBase Zookeeper quorum."
                               })
-        puts "..done"
       end
       
-      groups2 = ["#{@security_group_prefix}","#{@security_group_prefix}-master","#{@security_group_prefix}-zk"]
-      if (options[:launch_aux] == true)
-        groups2.push("#{@security_group_prefix}-aux")
-      end
+      groups2 = ["#{@security_group_prefix}","#{@security_group_prefix}-master","#{@security_group_prefix}-zk","#{@security_group_prefix}-aux"]
       
       # <allow ssh to each instance from anywhere.>
       groups2.each {|group|
@@ -1032,15 +1051,15 @@ module Hadoop
       return instances.instancesSet.item
     end
     
-    def HCluster.watch(name,instances,begin_output = "[launch:#{name}",end_output = "]\n",debug_level = @@debug_level)
+    def HCluster.watch(name, instances, begin_output = "[launch:#{name}", end_output = "]\n")
       # note: this aws_connection is separate for this watch() function call:
       # this will hopefully allow us to run watch() in a separate thread if desired.
       #FIXME: cache this AWS::EC2::Base instance.
-      @aws_connection = AWS::EC2::Base.new(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'])
+      @aws_connection = AWS::EC2::Base.new(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'],:server => ENDPOINT)
       
       print begin_output
       STDOUT.flush
-      
+
       wait = true
       until wait == false
         wait = false
@@ -1068,9 +1087,6 @@ module Hadoop
               wait = true
             else
               #instance is running 
-              if debug_level > 0
-                puts "watch(#{name}): #{instance.instanceId} : #{status}"
-              end
               instances.instancesSet.item[i] = instance_info
             end
           rescue AWS::InvalidInstanceIDNotFound
@@ -1092,9 +1108,7 @@ module Hadoop
     def launch_zookeepers(options = {})
       options = {
         :stdout_handler => HCluster::summarize_stdout,
-        :stderr_handler => HCluster::summarize_stderr,
-        :hbase_debug_level => 'INFO',
-        :extra_packages => ""
+        :stderr_handler => HCluster::summarize_stderr
       }.merge(options)
 
       options[:ami] = zk_image['imageId']
@@ -1104,25 +1118,15 @@ module Hadoop
       options[:instance_type] = @zk_instance_type
       options[:availability_zone] = @zone
       options[:key_name] = @key_name
-      @zks = HCluster.do_launch(options,"zk",lambda{|zks|setup_zookeepers(zks,
+      @zks = HCluster.do_launch(options,"zk",lambda{|instances|setup_zookeepers(instances,
                                                                           options[:stdout_handler],
-                                                                          options[:stderr_handler],
-                                                                          options[:hbase_debug_level])})
+                                                                          options[:stderr_handler])})
     end
         
-    def zookeeper_quorum
-      retval = ""
-      @zks.each {|zk|
-        retval = "#{retval} #{zk.privateDnsName}"
-      }
-      trim(retval)
-    end
-    
     def launch_master(options = {})
       options = {
         :stdout_handler => HCluster::summarize_stdout,
         :stderr_handler => HCluster::summarize_stderr,
-        :hbase_debug_level => 'INFO',
         :extra_packages => ""
       }.merge(options)
 
@@ -1136,16 +1140,14 @@ module Hadoop
 
       @master = HCluster.do_launch(options,"master",lambda{|instances| setup_master(instances[0],
                                                                                     options[:stdout_handler],options[:stderr_handler],
-                                                                                    options[:extra_packages],
-                                                                                    options[:hbase_debug_level])})[0]
+                                                                                    options[:extra_packages])})[0]
     end
     
     def launch_slaves(options = {})
       options = {
         :stdout_handler => HCluster::summarize_stdout,
         :stderr_handler => HCluster::summarize_stderr,
-        :hbase_debug_level => 'INFO',
-        :extra_packages => ''
+        :extra_packages => ""
       }.merge(options)
 
       options[:ami] = regionserver_image['imageId']
@@ -1158,56 +1160,67 @@ module Hadoop
       @slaves = HCluster.do_launch(options,"rs",lambda{|instances|setup_slaves(instances,
                                                                                options[:stdout_handler],
                                                                                options[:stderr_handler],
-                                                                               options[:extra_packages],
-                                                                               options[:hbase_debug_level])})
+                                                                               options[:extra_packages])})
     end
     
-    def launch_aux
+    def launch_aux(options = {})
+      options = {
+        :stdout_handler => HCluster::summarize_stdout,
+        :stderr_handler => HCluster::summarize_stderr,
+        :extra_packages => ''
+      }.merge(options)
+
       options[:ami] = regionserver_image['imageId']
-      options[:min_count] = 1
-      options[:max_count] = 1
+      options[:min_count] = @num_aux
+      options[:max_count] = @num_aux
       options[:security_group] = @aux_security_group
-      options[:instance_type] = @rs_instance_type
+      options[:instance_type] = @aux_instance_type
       options[:availability_zone] = @zone
-      @aux = do_launch(options,"aux",lambda{|instances|setup_aux(instances[0])})[0]
+      options[:key_name] = @key_name
+      @aux = HCluster.do_launch(options,"aux",lambda{|instances|setup_aux(instances,
+                                                                               options[:stdout_handler],
+                                                                               options[:stderr_handler],
+                                                                               options[:extra_packages])})
     end
     
     # note that default 'zks' argument is cluster's current set of zookeepers.
     # so calling e.g. "mycluster.setupzookeepers" with no arguments will cause
     # the zookeeper setup to re-run. The effect on any existing zookeeper processes
     # depends on the specific behavior of hbase-ec2-init-zookeeper-remote.sh.
-    def setup_zookeepers(zks = @zks, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, debug_level = "INFO")
+    def setup_zookeepers(zks = @zks, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output)
       #when zookeepers are ready, copy info over to them..
       #for each zookeeper, copy ~/hbase-ec2/bin/hbase-ec2-init-zookeeper-remote.sh to zookeeper, and run it.
-      HCluster::until_ssh_able(zks)
-      zks.each {|zk|
+      HCluster::until_ssh_able(zks, @debug_level)
+
+      @zookeeper_quorum = zks.collect{ |zk| zk.privateDnsName }.join(',')
+      if @debug_level > 0
+        puts "zk quorum: #{@zookeeper_quorum}"
+      end
+
+      zks.each { |zk|
 
         # if no zone specified by user, use the zone that AWS chose for the first
         # instance launched in the cluster (the first zookeeper).
         @zone = zk.placement['availabilityZone'] if !@zone
 
-        if (@debug_level > 0)
+        if @debug_level > 0
           puts "zk dnsname: #{zk.dnsName}"
         end
         HCluster::scp_to(zk.dnsName,File.dirname(__FILE__) +"/../bin/hbase-ec2-init-zookeeper-remote.sh","/var/tmp")
-        #note that ZOOKEEPER_QUORUM is not yet set, but we don't 
-        # need it set to start the zookeeper(s) themselves, 
-        # so we can remove the ZOOKEEPER_QUORUM=.. from the following.
         HCluster::ssh_to(zk.dnsName,
-                         "sh -c \"ZOOKEEPER_QUORUM=\\\"#{zookeeper_quorum}\\\" sh /var/tmp/hbase-ec2-init-zookeeper-remote.sh\"",
+                         "sh -c \"ZOOKEEPER_QUORUM=\\\"#{@zookeeper_quorum}\\\" sh /var/tmp/hbase-ec2-init-zookeeper-remote.sh\"",
                          stdout_handler,stderr_handler,
                          "[setup:zk:#{zk.dnsName}",
                          "]\n")
       }
     end
 
-    def setup_master(master = @master, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
-                     extra_packages = "", debug_level = "INFO")
+    def setup_master(master = @master, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, extra_packages = "")
       #set cluster's dnsName to that of master.
       @dnsName = master.dnsName
       @master = master
       
-      HCluster::until_ssh_able([master])
+      HCluster::until_ssh_able([master], @debug_level)
       
       @master.state = "running"
       # <ssh key>
@@ -1221,61 +1234,46 @@ module Hadoop
       HCluster::scp_to(master.dnsName,init_script,"/root/#{@@remote_init_script}")
       HCluster::ssh_to(master.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
       # NOTE : needs zookeeper quorum: requires zookeeper to have come up.
-      if debug_level == "DEBUG"
-        puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
+      if @debug_level > 0
+        puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
       end
-      HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
-                       stdout_handler,stderr_handler,
-                       "[setup:master:#{master.dnsName}","]\n")
+      HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:master:#{master.dnsName}","]\n")
     end
     
-    def setup_slaves(slaves = @slaves, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output,
-                     extra_packages = "", debug_level = "INFO")
+    def setup_slaves(slaves = @slaves, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, extra_packages = "")
       init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
-      #FIXME: requires that both master (master.dnsName) and zookeeper (zookeeper_quorum) to have come up.
-      HCluster::until_ssh_able(slaves)
-      slaves.each {|slave|
+      HCluster::until_ssh_able(slaves, @debug_level)
+      slaves.each {|inst|
         # <ssh key>
-        HCluster::scp_to(slave.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+        HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
         #FIXME: should be 400 probably.
-        HCluster::ssh_to(slave.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+        HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
         # </ssh key>
         
-        HCluster::scp_to(slave.dnsName,init_script,"/root/#{@@remote_init_script}")
-        HCluster::ssh_to(slave.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-<<<<<<< HEAD
-        HCluster::ssh_to(slave.dnsName,"sh /root/#{@@remote_init_script} #{@master.privateDnsName} \"#{zookeeper_quorum}\" #{@num_regionservers}",
-                         HCluster::echo_stdout,HCluster::echo_stderr,
-#                         HCluster::summarize_output,HCluster::summarize_output,
-=======
-        if debug_level == "DEBUG"
-          puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}"
-        end
-        HCluster::ssh_to(slave.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" #{debug_level}",
-                         stdout_handler,stderr_handler,
->>>>>>> eugene/master
-                         "[setup:rs:#{slave.dnsName}","]\n")
-
+        HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
+        HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+        puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+        HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:rs:#{inst.dnsName}","]\n")
       }
     end
-    
-    def setup_aux(aux) 
-      #NOTE:if setup process is multithreaded, setup_aux requires 
-      # master.dnsName and zookeeper_quorum to be known.
-      until_ssh_able([aux])
-      dnsName = aux.dnsName
-      
-      # <ssh key>
-      HCluster::scp_to(dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
-      #FIXME: should be 400 probably.
-      HCluster::ssh_to(dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
-      # </ssh key>
-      
-      init_script = "#{ROOT_DIR}/bin/#{@@remote_init_script}"
-      HCluster::scp_to(dnsName,init_script,"/root/#{@@remote_init_script}")
-      HCluster::ssh_to(dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-      HCluster::ssh_to(dnsName,"sh /root/#{@@remote_init_script} #{@master.privateDnsName} \"#{zookeeper_quorum}\" #{@num_regionservers}",
-                       HCluster::summarize_output,HCluster::summarize_output,"[setup:aux:#{dnsName}","]\n")
+
+    def setup_aux(aux = @aux, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, extra_packages = "")
+      init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
+      HCluster::until_ssh_able(aux, @debug_level)
+      aux.each {|inst|
+        # <ssh key>
+        HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+        #FIXME: should be 400 probably.
+        HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+        # </ssh key>
+        
+        HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
+        HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+        if @debug_level > 0
+          puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+        end
+        HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:aux:#{inst.dnsName}","]\n")
+      }
     end
     
     def terminate_zookeepers
@@ -1301,11 +1299,11 @@ module Hadoop
     end
     
     def terminate_slaves
-      @slaves.each { |slave|
-        if slave.instanceId
+      @slaves.each { |inst|
+        if inst.instanceId
           options = {}
-          options[:instance_id] = slave.instanceId
-          puts "terminating regionserver: #{slave.instanceId}"
+          options[:instance_id] = inst.instanceId
+          puts "terminating regionserver: #{inst.instanceId}"
           terminate_instances(options)
         end
       }
@@ -1313,13 +1311,15 @@ module Hadoop
     end
     
     def terminate_aux
-      if @aux && @aux.instanceId
-        options = {}
-        options[:instance_id] = @aux.instanceId
-        puts "terminating auxiliary: #{@aux.instanceId}"
-        terminate_instances(options)
-      end
-      @aux = nil
+      @aux.each { |inst|
+        if inst.instanceId
+          options = {}
+          options[:instance_id] = inst.instanceId
+          puts "terminating regionserver: #{inst.instanceId}"
+          terminate_instances(options)
+        end
+      }
+      @aux = []
     end
     
     def describe_instances(options = {})
@@ -1561,7 +1561,7 @@ module Hadoop
       # FIXME: add prompt.
       puts "Terminating ALL instances owned by you (owner_id=#{@@owner_id})."
 
-      @aws_connection or (@aws_connection = AWS::EC2::Base.new(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY']))
+      @aws_connection or (@aws_connection = AWS::EC2::Base.new(:access_key_id=>ENV['AWS_ACCESS_KEY_ID'],:secret_access_key=>ENV['AWS_SECRET_ACCESS_KEY'],:server => ENDPOINT))
       @aws_connection or raise HClusterStateError,"Could not log you in to AWS: check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in your environment."
 
       @aws_connection.describe_instances.reservationSet.item.each do |ec2_instance_set|
@@ -1574,7 +1574,7 @@ module Hadoop
     
     def to_s
       if (@state)
-        retval = "HCluster (state='#{@state}'): #{@num_regionservers} regionserver#{((@numregionservers == 1) && '') || 's'}; #{@num_zookeepers} zookeeper#{((@num_zookeepers == 1) && '') || 's'}; hbase_version:#{options[:hbase_version]};"
+        retval = "HCluster (state='#{@state}'): #{@num_regionservers} regionserver#{((@numregionservers == 1) && '') || 's'}; #{@num_zookeepers} zookeeper#{((@num_zookeepers == 1) && '') || 's'}; #{@num_aux} aux#{((@num_aux == 1) && '') || 's'}; hbase_version:#{options[:hbase_version]};"
         if (@aux)
           retval = retval + "; 1 aux"
         end
@@ -1603,10 +1603,9 @@ module Hadoop
       return retval
     end
     
-    def HCluster.until_ssh_able(instances,debug_level = @@debug_level)
+    def HCluster.until_ssh_able(instances, debug_level=@@debug_level)
       # do not return until every instance in the instances array is ssh-able.
       # FIXME: make multithreaded: test M (M > 0) instances in M threads until all instances are tested.
-      debug_level = 0
       instances.each {|instance|
         connected = false
         until connected == true
