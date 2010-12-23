@@ -443,7 +443,7 @@ module Hadoop
         })
     rescue
       puts "ooops..maybe you didn't define AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY? "
-  end
+    end
     
     attr_reader :zks, :master, :slaves, :aux, :zone, :zk_image_label,
     :master_image_label, :slave_image_label, :aux_image_label, :owner_id,
