@@ -1,204 +1,361 @@
+# to make sure it can run, you need to install all dependencies:
+# gem install net-ssh
+# gem install net-scp
+# gem install amazon-ec2
+# gem install aws-s3
+# gem install git
+# gem install aws
+# 
+# maven
+# git
 
-options = {
+$ycsbTestOptions = {
+  :emailTo => ["mingjie_lai@trendmicro.com"],
+  :emailFrom =>  "ycsb.hbase@gmail.com",  
+  :localProcessDir => "/tmp/ycsb",
+  :remoteYcsbDir => "/mnt/ycsb",
+  :testRecordCount => "1000000",
+  :testOperationCount => "1000000",
+  :testThreadNumber => "10",
+  :smtpServer => "smtp.gmail.com",
+  :smtpAccount => "ycsb.hbase",
+  :smtpPassword => "Qazwsx123_",
+  # check scm, to determine whether there is code changes since last
+  # time. true: check scm and rebuild jar, if there is changes, rebuild
+  # jar and use the new jar. false: to perform tests without scm check. 
+  :checkSCMChanges => false,
+  :gitWorkDir => "/home/mlai/git/hbase.asf",
+  :gitCOBranch => "tm-5",
+  :gitCheckLogSince => "1",
+  :gitRemote => "origin",
+  :gitRepo => "git@mothership.iridiant.net:hbase.git",
+  :jarFileName => "hbase-0.90-tm-5.jar",
+  # a customized ycsb, containing a run script and modified logic.
+  :ycsbURL => "https://s3.amazonaws.com/mlai.hadoop.tarballs/ycsb.tar"
+  
+}
+
+
+# start HBase cluster at EC2
+$ClusterOptions = {
   :label => 'hbase-0.90-tm-5-x86_64',
   :master_instance_type => "m1.large",
   :rs_instance_type => "c1.xlarge",
   :zk_instance_type => "m1.large",
   :num_zookeepers => 1,
-  :num_regionservers => 3,
+  :num_regionservers => 10,
   :security_group_prefix => 'hcluster',
   :hbase_debug_level => 'INFO',
   :owner_id => '801535628028'
 }
-cluster = @hcluster.new options
-cluster.launch 
 
-#
-# Initialize and start Hadoop (HDFS and MapReduce)
-#
+$cluster = @hcluster.new $ClusterOptions
 
-cluster.ssh("cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/#{cluster.master.privateDnsName.downcase}; bin/hadoop namenode -format")
 
-cluster.ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start namenode")
-cluster.slaves.each {|inst|
-  cluster.ssh_to(inst.dnsName,
-    "/usr/local/hadoop-*/bin/hadoop-daemon.sh start datanode") }
+#######################
 
-cluster.ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /mapred/system; bin/hadoop fs -chown hadoop /mapred/system")
-
-cluster.ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start jobtracker")
-cluster.slaves.each {|inst|
-  cluster.ssh_to(inst.dnsName,
-    "/usr/local/hadoop-*/bin/hadoop-daemon.sh start tasktracker") }
-
-#
-# Initialize and start HBase
-#
-
-cluster.ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /hbase; bin/hadoop fs -chown hbase /hbase")
-
-cluster.ssh("/usr/local/hbase-*/bin/hbase-daemon.sh start master")
-cluster.slaves.each {|inst|
-  cluster.ssh_to(inst.dnsName,
-    "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver") }
-
-# run ycsb
-    
-puts("Sleep 5 secs ...cluster ")
-sleep 5 
-puts("Start to run ycsb ...")
-
-cluster.ssh(". /usr/local/hbase/conf/hbase-env.sh; cd /usr/local; " +
-  "rm -rf /usr/local/ycsb*;" + 
-  "wget -nv https://s3.amazonaws.com/mlai.hadoop.tarballs/ycsb.tar; " +
-  "tar xfP ycsb.tar;" + 
-  "cd ycsb; chmod +x run-test.sh;" +
-  "/usr/local/ycsb/run-test.sh -p recordcount=12300 -threads 10 " + 
-  "-p measurementtype=timeseries -p timeseries.granularity=2000;" +
-  "tar cfz /tmp/results.tar.gz results;") 
-
-#cluster.ssh(". /usr/local/hbase/conf/hbase-env.sh; cd /usr/local; " +
-#  "cd ycsb; chmod +x run-test.sh;" +
-#  "/usr/local/ycsb/run-test.sh -p recordcount=123 -threads 10 -target 100 " + 
-#  "-p measurementtype=timeseries -p timeseries.granularity=20;" +
-#  "tar cfz /tmp/results.tar.gz results;") 
-
-# download the results files locally.
-localProcessDir="/tmp"
-Net::SCP.start(cluster.dnsName(),
-  'root',
-  :keys => ENV['EC2_ROOT_SSH_KEY'],
-  :paranoid => false
-  ) do |scp|
-    scp.download! "/tmp/results.tar.gz", localProcessDir
+def startCluster
+  opt = {
+    :availability_zone => 'us-east-1c'
+  }  
+  $cluster.launch opt
 end
 
-# send email now. ideally we can parse the result files and 
-# insert the results to a DB, and display it in charts.
-require 'net/smtp'
+def startHadoop
+  #
+  # Initialize and start Hadoop (HDFS and MapReduce)
+  #
+  
+  $cluster.ssh("cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/#{$cluster.master.privateDnsName.downcase}; bin/hadoop namenode -format")
+  
+  $cluster.ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start namenode")
+  $cluster.slaves.each {|inst|
+    $cluster.ssh_to(inst.dnsName,
+      "/usr/local/hadoop-*/bin/hadoop-daemon.sh start datanode") }
+  
+  $cluster.ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /mapred/system; bin/hadoop fs -chown hadoop /mapred/system")
+  
+  $cluster.ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start jobtracker")
+  $cluster.slaves.each {|inst|
+    $cluster.ssh_to(inst.dnsName,
+      "/usr/local/hadoop-*/bin/hadoop-daemon.sh start tasktracker") }
+end
 
-# you need to install smtp server locally to send email from localhost.
+def startHBase 
+  #
+  # Initialize and start HBase
+  #
+  $cluster.ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /hbase; bin/hadoop fs -chown hbase /hbase")
+  
+  $cluster.ssh("/usr/local/hbase-*/bin/hbase-daemon.sh start master")
+  $cluster.slaves.each {|inst|
+    $cluster.ssh_to(inst.dnsName,
+      "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver") }
+end
 
-# untar the file
-%x[cd #{localProcessDir}; tar zxf results.tar.gz]
+def stopHBase 
+  #
+  # Initialize and start HBase
+  #
+  $cluster.slaves.each {|inst|
+    $cluster.ssh_to(inst.dnsName,
+      "/usr/local/hbase-*/bin/hbase-daemon.sh stop regionserver") }
+  $cluster.ssh("/usr/local/hbase-*/bin/hbase-daemon.sh stop master")
+end
 
-resultsDir=localProcessDir + "/results"
 
-
-# we need:
-runTime = ""
-throughput = ""
-opsNumber = ""
-command = ""
-averageLatency = ""
-minLatency = ""
-maxLatency = ""
-return0 = ""
-
-reportDetail=""
-Dir.foreach(resultsDir) { |subdir| 
-  if ( subdir =~ /\d+[-]\d+/ )
-    testStartTime = subdir
-    reportDetail += "<br>Test Summary: <br>\n" +
-      "start time: #{testStartTime}<br>\n" +
-      "number of RS: #{options[:num_regionservers]}<br>\n"
-      
-    reportDetail += "Test Details:<br>\n"
-    i = 0
-    Dir.foreach(resultsDir + "/" + subdir) { |file|
-      if ( file =~ /.*.txt/)
-        filePath = resultsDir + "/" + subdir + "/" + file
-        if (File.exist?(filePath))
-          i+=1
-          runTime = ""
-          throughput = ""
-          opsNumber = ""
-          command = ""
-          averageLatency = ""
-          minLatency = ""
-          maxLatency = ""
-          return0 = ""
-          
-          #extract useful info:
-          File.open(filePath, "r") do |infile|
-            while (line = infile.gets)
-              # break if it passes the first several lines
-              
-              if line =~ /[\[].*[\]],[ ]*\d+,[. \d]*/
-                break
-              elsif line =~ /[\[]OVERALL[\]],[ ]*RunTime/
-                runTime = line
-              elsif line =~ /[\[]OVERALL[\]],[ ]*Throughput/
-                throughput = line
-              elsif line =~ /[\[].*[\]],[ ]*Operations/
-                opsNumber = line
-              elsif line =~ /[\[].*[\]],[ ]*AverageLatency/
-                averageLatency = line
-              elsif line =~ /[\[].*[\]],[ ]*MinLatency/
-                minLatency = line
-              elsif line =~ /[\[].*[\]],[ ]*MaxLatency/
-                maxLatency = line
-              elsif line =~ /[\[].*[\]],[ ]*Return=0/
-                return0 = line
-              elsif line =~ /Command line:/
-                command = line
-              else
-                puts "ignored lines: #{line}"
-              end
-            end
-          end
-
-          reportDetail += "<br>Test #{i}<br>\n"
-          reportDetail += "command: #{command}<br>\n"
-          reportDetail += "runTime: #{runTime}<br>\n"
-          reportDetail += "throughput: #{throughput}<br>\n"
-          reportDetail += "opsNumber: #{opsNumber}<br>\n"
-          reportDetail += "averageLatency: #{averageLatency}<br>\n"
-          reportDetail += "minLatency: #{minLatency}<br>\n"
-          reportDetail += "maxLatency: #{maxLatency}<br>\n"
-          reportDetail += "return0: #{return0}<br>\n"
-        end
-      end
-    }
+# this function needs to be called after the cluster started.
+# it does: download jar from master, return the jar path name. 
+def getLocalHBasePath
+  jarDire = $ycsbTestOptions[:localProcessDir] + "/jar"
+  
+  %x[rm -rf #{jarDire}; mkdir -p #{jarDire}]
+  
+  Net::SCP.start($cluster.dnsName(),
+    'root',
+    :keys => ENV['EC2_ROOT_SSH_KEY'],
+    :paranoid => false
+    ) do |scp|
+      scp.download! "/usr/local/hbase/#{$ycsbTestOptions[:jarFileName]}", jarDire
   end
-}
-puts reportDetail 
+  
+  %x[cd #{jarDire}; jar xf #{$ycsbTestOptions[:jarFileName]}]
+  
+  jarDire += "/" + $ycsbTestOptions[:jarFileName]
+  
+  return jarDire if File.exists?(jarDire)
+  return nil
+end
 
-# the lines we have interests:
-#Command line: -load -db com.yahoo.ycsb.db.HBaseClient -P /usr/local/ycsb/workloads/workloada -p colum
-#...
-#[OVERALL], RunTime(ms), 2082.0
-#[OVERALL], Throughput(ops/sec), 59.07780979827089
-#[INSERT], Operations, 120
-#[INSERT], AverageLatency(ms), 3.925
-#[INSERT], MinLatency(ms), 0
-#[INSERT], MaxLatency(ms), 69
-#[INSERT], Return=0, 120
+def uploadHBaseJar(filePath)
+  # TODO: make sure hbase is not running
+  $cluster.scp(filePath, $cluster.dnsName + ":/usr/local/hbase/")
+  $cluster.slaves.each {|inst|
+      $cluster.scp(filePath, inst.dnsName + ":/usr/local/hbase/") }
+end
+
+# perform git checkin check, to see any changes during the last 
+
+require 'git'
+
+#######################
+
+def isHBaseChanged(workDir, repo, remote, branch, sinceDaysAgo)
+  changes = getGitChanges(workDir, repo, remote, branch, sinceDaysAgo)
+
+rescue => e
+  p "Get git status failed."
+  raise
+  return false
+  
+ensure
+  
+  if (changes!=nil && changes.length == 0)
+    return false
+  else
+    p "Changes: " + changes
+    return true
+  end  
+end
+
+# check git changes for a given period of time. 
+def getGitChanges(workDir, repo, remote, branch, sinceDaysAgo)
+  # open an existing 
+  g = Git.open(working_dir = workDir)
+  
+rescue => e
+  p "Fail to open local work directory at " + workDir + ". " + 
+    e.message + ". Try to clone from " + repo 
+  g = Git.clone(repo, workDir)
+  
+ensure  
+  g.pull(remote, branch)
+  g.branch(branch)
+  changes = g.log().since(sinceDaysAgo + ' days ago').to_s
+  return changes
+end
+
+def buildNewHBaseJar(workDir)
+  # 1. check out hbase from git
+  p "Start to build new HBase jar...."
+  #%x[cd #{wordDir}; mvn clean; mvn -DskipTests install]
+
+  # 2. build hbase
+  jarPath = "#{workDir}/target/#{$ycsbTestOptions[:jarFileName]}"
+  
+  return jarPath if File.exists?(jarPath)
+  return nil
+end
 
 
-from="ycsb_hbase@test"
-to="mingjie@gmail.com"
-reportGenerateTime=Time.new
-formattedTime=reportGenerateTime.strftime("%Y-%m-%d %H:%M:%S")
 
+# Send results to email recipients thru SMTP
+def sendResults(reportDetail)
+  from = $ycsbTestOptions[:emailFrom] 
+  to = $ycsbTestOptions[:emailTo] 
+#  ["apurtell@apache.org",
+#    "gary_helmling@trendmicro.com",
+#    "eugene_koontz@trendmicro.com",
+#    "mingjie_lai@trendmicro.com"]
+
+  reportGenerateTime = Time.new
+  formattedTime = reportGenerateTime.strftime("%Y-%m-%d %H:%M:%S")
+  
 message = <<MESSAGE_END
 From: YCSB for HBase <#{from}>
-To: #{to} <#{to}>
+To: #{to.join(", ")}
 MIME-Version: 1.0
 Content-type: text/html
 Subject: YCSB test results #{formattedTime}
 
-This is an e-mail message to be sent for the YCSB test results for HBase, 
-which was generated at #{formattedTime}. 
+This is an automatic generated e-mail message. 
+It's YCSB test results for HBase on EC2 which was generated at #{formattedTime}. 
 <br>
 #{reportDetail}
 <br>
 Please don\'t reply to this email.
 MESSAGE_END
-
-Net::SMTP.start('localhost') do |smtp|
-  smtp.send_message message, from, to
+  
+  smtp = Net::SMTP.new $ycsbTestOptions[:smtpServer], 587
+  smtp.enable_starttls
+  smtp.start('localhost',
+    $ycsbTestOptions[:smtpAccount], $ycsbTestOptions[:smtpPassword],
+    :login) do |smtp|
+   smtp.send_message message, from, to
+  end
 end
 
 
-cluster.terminate()
+def generateResultDetail()
+  # untar the file
+  %x[ cd #{$ycsbTestOptions[:localProcessDir]}; mkdir -p backup; mv results/* backup; rm -rf results; tar zxf results.tar.gz]
+  
+  resultsDir=$ycsbTestOptions[:localProcessDir] + "/results"
+  reportDetail=""
+  reportDetail += "<br><b>Test Summary: </b><br>\n"
+  
+  formattedTime = $testStartTime.strftime("%Y-%m-%d %H:%M:%S")
+  reportDetail += "Test start time: #{formattedTime}<br>\n"
+  
+  formattedTime = $testEndTime.strftime("%Y-%m-%d %H:%M:%S")
+  reportDetail += "Test end time: #{formattedTime}<br>\n"
+  
+  reportDetail += "# of RS: #{$ClusterOptions[:num_regionservers]}<br>\n"
+  reportDetail += "HBase version: #{$HBaseVersion}<br>\n"
+  reportDetail += "HBase compiled time: #{$HBaseBuiltTime}<br>\n"
+  
+  Dir.foreach(resultsDir) { |subdir| 
+    if ( subdir =~ /\d+[-]\d+/ )
+      reportDetail += "Test Details:<br>\n"
+      i = 0
+      Dir.foreach(resultsDir + "/" + subdir) { |file|
+        if ( file =~ /.*.txt/)
+          filePath = resultsDir + "/" + subdir + "/" + file
+          if (File.exist?(filePath))
+            i+=1
+            reportDetail += "<hr><br><b>Test #{i}</b><br>\n"
+                      
+            #extract useful info:
+            File.open(filePath, "r") do |infile|
+              # assume we need all contents from the result files.
+              while (line = infile.gets)
+                reportDetail += line + "<br>\n"
+              end
+            end
+          end
+        end
+      }
+    end
+  } 
+  return reportDetail
+end
+
+
+localJarPath = ""
+clusterStartTime = Time.new
+
+
+if ($ycsbTestOptions[:checkSCMChanges]) 
+  begin
+    if (isHBaseChanged($ycsbTestOptions[:gitWorkDir],
+        $ycsbTestOptions[:gitRepo],      
+        $ycsbTestOptions[:gitRemote],  
+        $ycsbTestOptions[:gitCOBranch], 
+        $ycsbTestOptions[:gitCheckLogSince]))
+          
+      p "Source code changed since " + $ycsbTestOptions[:gitCheckLogSince] +
+        " days ago. Rebuild jar and use it to perform the test."
+      # rebuild hbase jar and upload to cluster later on    
+      localJarPath = buildNewHBaseJar($ycsbTestOptions[:gitWorkDir])
+       
+      # start cluster, upload built hbase jars, get hbase info 
+      
+      # start cluster
+      startCluster
+      startHadoop
+      
+      # upload to all nodes        
+      uploadHBaseJar(localJarPath)
+      startHBase
+    else
+      puts "No git changes. Don't need to run times."
+      exit
+    end 
+        
+    rescue => e
+      p "Check git failed. Exit."
+      exit  
+  end
+else
+  # start cluster, get hbase information from downloaded jar files.
+  # start cluster
+  startCluster
+  startHadoop
+  startHBase
+  localJarPath = getLocalHBasePath
+end
+
+##############################################
+# run ycsb
+# blindly wait 2 mins to make sure hbase starts
+puts("Sleep 120 secs ... ")
+sleep 20
+puts("Start to run ycsb ...")
+
+require 'net/smtp'
+
+$testStartTime = Time.new
+# 1. run ycsb test
+$cluster.ssh(". /usr/local/hbase/conf/hbase-env.sh; rm -rf #{$ycsbTestOptions[:remoteYcsbDir]};" +
+  "mkdir -p #{$ycsbTestOptions[:remoteYcsbDir]}; cd #{$ycsbTestOptions[:remoteYcsbDir]}; " +
+  "wget -nv #{$ycsbTestOptions[:ycsbURL]}; " +
+  "tar xfP ycsb.tar;" + 
+  "cd ycsb; chmod +x run-test.sh;" +
+  "#{$ycsbTestOptions[:remoteYcsbDir]}/ycsb/run-test.sh " + 
+  "-p recordcount=#{$ycsbTestOptions[:testRecordCount]} " + 
+  "-p operationcount=#{$ycsbTestOptions[:testOperationCount]} " + 
+  "-threads #{$ycsbTestOptions[:testThreadNumber]} " + 
+  "-p measurementtype=timeseries -p timeseries.granularity=60000 -p basicdb.verbose=false;" +
+  "tar cfz #{$ycsbTestOptions[:remoteYcsbDir]}/results.tar.gz results;") 
+
+$testEndTime = Time.new
+
+# 2. download the results files locally.
+
+%x[mkdir -p #{$ycsbTestOptions[:localProcessDir]}; ]
+Net::SCP.start($cluster.dnsName(),
+  'root',
+  :keys => ENV['EC2_ROOT_SSH_KEY'],
+  :paranoid => false
+  ) do |scp|
+    scp.download! "#{$ycsbTestOptions[:remoteYcsbDir]}/results.tar.gz", $ycsbTestOptions[:localProcessDir]
+end
+
+# 3. generate email contents
+resultDetail = generateResultDetail()
+
+# 4. send email. 
+sendResults(resultDetail)
+
+# terminate the cluster
+$cluster.terminate()
