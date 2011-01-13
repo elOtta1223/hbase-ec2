@@ -1,5 +1,6 @@
 
 # start HBase cluster at EC2
+require 'YcsbCluster'
 
 ycsbTestOptions = {
   :emailTo => ["mingjie_lai@trendmicro.com", "mingjie@gmail.com"],

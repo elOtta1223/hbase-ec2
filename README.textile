@@ -27,6 +27,7 @@ h1. Prerequisites
 
 * @export RUBYOPT="rubygems"@
 * Download and install the EC2 AMI and API tools
+
 pre.
 su - root
 cd /opt
@@ -41,6 +42,9 @@ ln -s ec2-api-tools-* ec2-api-tools
 rm *.zip
 
 * An Amazon EC2 account. You must add the following to your environment prior to starting irb:
+* Ruby support
+* sudo apt-get install irb
+* sudo apt-get install rubygems
 * sudo gem install net-ssh
 * sudo gem install net-scp
 * sudo gem install amazon-ec2
@@ -59,7 +63,7 @@ export AWS_ACCOUNT_ID=...
 
 h2. Optional configuration
 
-You can edit 
+You can edit the ycsb.rb file to configure the test. 
 
 h1. Downloading hbase-ec2
 
@@ -68,11 +72,13 @@ git clone git://github.com/mlai/hbase-ec2.git ~/hbase-ec2
 git checkout --track -b origin/ycsb ycsb
 
 h1. Usage
+
 There are 2 options for you to execute the script:
 * Interactive Ruby shell
-* Run with one command 
+* Run with a batch 
 
 h2. Run as a command
+
 Use the ycsb recipe to start and stop the test.
 
 You need to edit the recipes/ycsb.rb to configure your cluster and test.
