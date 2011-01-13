@@ -1,23 +1,54 @@
 h1. Introduction 
 
-"hbase-ec2":http://github/ekoontz/hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of "Amazon EC2":http://aws.amazon.com/ instances as a single "HBase":http://hbase.apache.org cluster.
+hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of "Amazon EC2":http://aws.amazon.com/ instances as a single "HBase":http://hbase.apache.org cluster.
+
+"YCSB":https://github.com/brianfrankcooper/YCSB is a framework and common set
+of workloads for evaluating the performance of different "key-value"
+and "cloud" serving stores. It can support HBase, Cassandra, MongoDB, and Voldemort now.
+
+This package is derived from HBase EC2 script, and support to run YCSB tests against 
+a HBase cluster deployed at EC2. 
+
+h2. Credits
+* Andrew Purtell: original developer
+* Eugene Koontz: added Ruby support
+* Yahoo: YCSB 
 
 h1. Contents
 
 hbase-ec2 is currently supplied as a set of ruby files that currently is :
 
 * lib/hcluster.rb : the Hadoop::HCluster and Hadoop::HImage class definitions
-* lib/TestDFSIO.rb : a subclass of HCluster, intended as an example for testing Hadoop filesystem functionality.
+* lib/YcsbCluster.rb : a subclass of HCluster, intended for testing HBase 
+functionality with YCSB.
+* recipes/ycsb.rb : a recipe to invoke HBase + YCSB cluster.
 
 h1. Prerequisites
 
 * @export RUBYOPT="rubygems"@
-* "AWS::EC2":http://amazon-ec2.rubyforge.org. You can install this with @gem install amazon-ec2@.
-* "AWS::S3":http://amazon.rubyforge.org. You can install this with @gem install aws-s3@.
-* "Net::SSH":http://net-ssh.rubyforge.org. You can install this with @gem install net-ssh@.
-* "Net::SCP":http://net-scp.rubyforge.org. You can install this with @gem install net-scp@.
-* OpenSSL support for Ruby. This might also be installed with your ruby, but on Ubuntu, I had to do: @apt-get install libruby-extras@.
+* Download and install the EC2 AMI and API tools
+pre.
+su - root
+cd /opt
+mkdir aws
+cd aws
+wget http://s3.amazonaws.com/ec2-downloads/ec2-ami-tools.zip
+unzip ec2-ami-tools.zip
+wget http://s3.amazonaws.com/ec2-downloads/ec2-api-tools.zip
+unzip ec2-api-tools.zip
+ln -s ec2-ami-tools-* ec2-ami-tools
+ln -s ec2-api-tools-* ec2-api-tools
+rm *.zip
+
 * An Amazon EC2 account. You must add the following to your environment prior to starting irb:
+* sudo gem install net-ssh
+* sudo gem install net-scp
+* sudo gem install amazon-ec2
+* sudo gem install aws-s3
+* sudo gem install git
+* sudo gem install aws
+* sudo gem install net-smtp
+
 
 pre. 
 export AWS_ACCESS_KEY_ID=...
@@ -28,73 +59,46 @@ export AWS_ACCOUNT_ID=...
 
 h2. Optional configuration
 
-You can set your preferred EC2 region with the EC2_URL environment variable; for example: 
-
-pre. 
-export EC2_URL="http://ec2.us-west-1.amazonaws.com"
-
-By default, @https://ec2.amazonaws.com@ will be used. You can see a complete list of available regions by using the @ec2-describe-regions@ function (see Amazon's "Region and Availability Zone FAQ":http://docs.amazonwebservices.com/AWSEC2/2010-06-15/UserGuide/index.html?FAQ_Regions_Availability_Zones.html).
+You can edit 
 
 h1. Downloading hbase-ec2
 
 pre. 
-git clone git://github.com/ekoontz/hbase-ec2.git
+git clone git://github.com/mlai/hbase-ec2.git ~/hbase-ec2
+git checkout --track -b origin/ycsb ycsb
 
 h1. Usage
+There are 2 options for you to execute the script:
+* Interactive Ruby shell
+* Run with one command 
 
-h2. Preliminaries
+h2. Run as a command
+Use the ycsb recipe to start and stop the test.
+
+You need to edit the recipes/ycsb.rb to configure your cluster and test.
+
+pre.
+$ bin/ec2sh recipes/ycsb.rb
+
+It will:
+* start the cluster at EC2
+* start Hadoop 
+* check HBase code changes: if there is new changes, build HBase jar locally, and upload the jar to the cluster.
+* start HBase
+* start YCSB test
+* collect YCSB test result, and perform test result analysis
+* send email to configured recipients
+* terminate the cluster at EC2
+
+
+h2. Run with shell
+
+Preliminaries
 
 pre. 
-$ irb
+$ bin/ec2sh
 >> $:.unshift("~/hbase-ec2/lib")
 => ["~/hbase-ec2/lib", ...]
->> load 'hcluster.rb'
-=> true
->> include Hadoop
-=> Object
-
-h2. Creating an image from hadoop-core and hbase source trees
-
-See: "Himage Usage":http://wiki.github.com/ekoontz/hbase-ec2/himage-usage
-
-h2. Starting a new Amazon HBase cluster
-
-pre. 
->> cluster = HCluster.new :label => 'hbase-0.20.5-x86_64'
-=> #<Hadoop::HCluster:0x1010e2098 @rs_key_name="root",
+>> load 'YcsbCluster.rb'
 ...
->> cluster.launch
-[launch:zk.........................]
-[setup:zk:ec2-184-73-5-47.compute-1.amazonaws.com...........]
-[launch:master.......................]
-[setup:master:ec2-184-73-53-56.compute-1.amazonaws.com...................................................]
-[launch:rs....................]
-[setup:rs:ec2-184-73-7-119.compute-1.amazonaws.com....................................]
-[setup:rs:ec2-184-73-12-72.compute-1.amazonaws.com....................................]
-[setup:rs:ec2-184-73-110-61.compute-1.amazonaws.com....................................]
-[setup:rs:ec2-75-101-180-6.compute-1.amazonaws.com...................................]
-[setup:rs:ec2-174-129-187-163.compute-1.amazonaws.com....................................]
-=> "running"
->> cluster.run_test("TestDFSIO -write -nrFiles 10 -fileSize 1000")
-TestFDSIO.0.0.4
-(stderr): 10/06/22 19:43:24 INFO mapred.FileInputFormat: nrFiles = 10
-(stderr): 10/06/22 19:43:24 INFO mapred.FileInputFormat: fileSize (MB) = 1000
-...
-10/06/22 19:44:32 INFO mapred.FileInputFormat:  IO rate std deviation: 1.0992092756403666
-10/06/22 19:44:32 INFO mapred.FileInputFormat:     Test exec time sec: 67.721
-10/06/22 19:44:32 INFO mapred.FileInputFormat: 
-=> nil
 
-h2. Terminating a Cluster
-
-pre. 
->> cluster.terminate
-terminating zookeeper: i-5144a73b
-terminating master: i-9344a7f9
-terminating regionserver: i-4d4aa927
-terminating regionserver: i-434aa929
-terminating regionserver: i-414aa92b
-terminating regionserver: i-474aa92d
-terminating regionserver: i-454aa92f
-=> {"name"=>"hdfs", "num_zookeepers"=>1, "master"=>"i-9344a7f9", "launchTime"=>"2010-06-22T23:22:13.000Z", "num_regionservers"=>5, "dnsName"=>"ec2-184-73-16-65.compute-1.amazonaws.com", "state"=>"terminated"}
->> 

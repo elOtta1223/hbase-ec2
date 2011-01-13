@@ -2,18 +2,19 @@
 # start HBase cluster at EC2
 
 ycsbTestOptions = {
-  :emailTo => ["mingjie_lai@trendmicro.com"],
+  :emailTo => ["mingjie_lai@trendmicro.com", "mingjie@gmail.com"],
   :emailFrom =>  "ycsb.hbase@gmail.com",  
   :localProcessDir => "/tmp/ycsb",
   :remoteYcsbDir => "/mnt/ycsb",
-  :testRecordCount => "10000000",
-  :testOperationCount => "10000000",
+  :testRecordCount => "1000",
+  :testOperationCount => "1000",
   :testThreadNumber => "10",
   :smtpServer => "smtp.gmail.com",
   :smtpAccount => "ycsb.hbase",
   :smtpPassword => "Qazwsx123_",
   # a customized ycsb, containing a run script and modified logic.
-  :ycsbURL => "https://s3.amazonaws.com/mlai.hadoop.tarballs/ycsb.tar"  
+  :ycsbURL => "https://s3.amazonaws.com/mlai.hadoop.tarballs/ycsb.tar",
+  :jarFileName => "hbase-0.90-tm-5.jar"  
 }
 
 #  ["apurtell@apache.org",
@@ -30,8 +31,7 @@ GitOptions = {
   :gitCOBranch => "tm-5",
   :gitCheckLogSince => "1",
   :gitRemote => "origin",
-  :gitRepo => "git@mothership.iridiant.net:hbase.git",
-  :jarFileName => "hbase-0.90-tm-5.jar"
+  :gitRepo => "git@mothership.iridiant.net:hbase.git"
 }
 
 ClusterOptions = {
@@ -51,12 +51,10 @@ ClusterOptions = {
 cluster = @ycsb.new ClusterOptions
 
 launchOptions = {
-  :availability_zone => 'us-east-1c',
-  :uploadHBaseJar => ''
+  :availability_zone => 'us-east-1c'
 }
 
 #if there is scm changes
-localJarPath = ''
 
 if (GitOptions[:checkSCMChanges]) 
   begin
@@ -74,7 +72,7 @@ if (GitOptions[:checkSCMChanges])
       p "Built a new hbase jar at: " + localJarPath
 
       # start cluster with a new hbase jar to be uploaded. 
-      launchOptions[:uploadHBaseJar] = localJarPath
+      launchOptions[:uploadHBaseJarDire] = localJarPath
       cluster.launch launchOptions
       
     else
@@ -89,12 +87,8 @@ if (GitOptions[:checkSCMChanges])
 else
   # start cluster, get hbase information from downloaded jar files.
   # start cluster with default hbase jars.
+  launchOptions[:uploadHBaseJarDire] = ""
   cluster.launch launchOptions
-  localJarPath = getLocalHBasePath
-  
-  #TODO: test the  above if block
-  
-  
 end
 
 cluster.test ycsbTestOptions      

@@ -58,14 +58,15 @@ class YcsbCluster < HCluster
     super(options)
     
     startHadoop
-    
-    uploadHBaseJar(options[:uploadHBaseJar]) if File.exists?(uploadHBaseJar)
+    if (options[:uploadHBaseJarDire] != nil)
+      uploadHBaseJar(options[:uploadHBaseJarDire]) if File.exists?(options[:uploadHBaseJarDire])
+    end
     
     startHBase
   end
 
   # Send results to email recipients thru SMTP
-  def sendResults(reportDetail)
+  def sendResults(reportDetail, options)
     from = options[:emailFrom] 
     to = options[:emailTo]
     reportGenerateTime = Time.new
@@ -161,7 +162,7 @@ MESSAGE_END
     
     testEndTime = Time.new
     
-    p "Test started at " + testStartTime + ", ended at " + testEndTime + "." 
+    p "Test started at " + testStartTime.to_s() + ", ended at " + testEndTime.to_s() + "." 
       
     # 2. download the results files locally.
     %x[mkdir -p #{options[:localProcessDir]}; ]
@@ -188,20 +189,30 @@ MESSAGE_END
     
     %x[cd #{jarDire}; jar xf #{options[:jarFileName]}]
     
-    mfFile = options[:jarFileName] + "/META-INF/MANIFEST.MF"
+    mfFile = jarDire + "/META-INF/MANIFEST.MF"
     # jarDire += options[:jarFileName]
+    buildNumber = ""
       
-    if File.exists?(jarDire)
-      builtTime = File.stat(mfFile).mtime if (File.exists(mfFile))
+    if File.exists?(mfFile)
+      builtTime = File.stat(mfFile).mtime
       
+      # buildNumber
+      File.open(mfFile, "r")  do |infile|
+        while (line = infile.gets)
+          if ( line =~ /Implementation-Version:/ )
+            buildNumber = line.split[1] if line.split[1] != nil
+          end
+        end
+      end
     end
-      
+    
     # 3. generate email contents
     resultDetail = generateResultDetail(options, 
       testStartTime, testEndTime, builtTime, buildNumber)
     
     # 4. send email. 
-    sendResults(resultDetail)
+    sendResults(resultDetail, options)
   end
+  
 end
 end
