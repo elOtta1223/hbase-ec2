@@ -98,7 +98,7 @@ MESSAGE_END
   
   
   def generateResultDetail(options, testStartTime, testEndTime,
-    builtTime, buildNumber)
+    builtTime, buildNumber, gitChanges = nil)
     # untar the file
     %x[ cd #{options[:localProcessDir]}; mkdir -p backup; mv results/* backup; rm -rf results; tar zxf results.tar.gz]
     
@@ -115,6 +115,7 @@ MESSAGE_END
     reportDetail += "# of RS: #{@num_regionservers}<br>\n"
     reportDetail += "HBase version: #{buildNumber}<br>\n"
     reportDetail += "HBase compiled time: #{builtTime}<br>\n"
+    reportDetail += "Git changes: #{gitChanges.to_s}<br>\n"
     
     Dir.foreach(resultsDir) { |subdir| 
       if ( subdir =~ /\d+[-]\d+/ )
@@ -144,7 +145,7 @@ MESSAGE_END
 
     
   # perform test and analyze the results (including sending emails) 
-  def test(options = {})
+  def test(options = {}, gitChanges = nil)
     # perform test
     testStartTime = Time.new
     # 1. run ycsb test
@@ -208,7 +209,8 @@ MESSAGE_END
     
     # 3. generate email contents
     resultDetail = generateResultDetail(options, 
-      testStartTime, testEndTime, builtTime, buildNumber)
+      testStartTime, testEndTime, builtTime, buildNumber, 
+      gitChanges)
     
     # 4. send email. 
     sendResults(resultDetail, options)

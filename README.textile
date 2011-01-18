@@ -1,13 +1,16 @@
 h1. Introduction 
 
-hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of "Amazon EC2":http://aws.amazon.com/ instances as a single "HBase":http://hbase.apache.org cluster.
+hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of 
+"Amazon EC2":http://aws.amazon.com/ instances as a single 
+"HBase":http://hbase.apache.org cluster.
 
 "YCSB":https://github.com/brianfrankcooper/YCSB is a framework and common set
 of workloads for evaluating the performance of different "key-value"
-and "cloud" serving stores. It can support HBase, Cassandra, MongoDB, and Voldemort now.
+and "cloud" serving stores. It can support HBase, Cassandra, MongoDB, PNUT, 
+and Voldemort now.
 
-This package is derived from HBase EC2 script, and support to run YCSB tests against 
-a HBase cluster deployed at EC2. 
+This package is derived from HBase EC2 script, and support to run YCSB tests 
+against a HBase cluster deployed at EC2. 
 
 h2. Credits
 * Andrew Purtell: original developer
@@ -28,7 +31,7 @@ h1. Prerequisites
 * @export RUBYOPT="rubygems"@
 * Download and install the EC2 AMI and API tools
 
-pre.
+<pre>
 su - root
 cd /opt
 mkdir aws
@@ -40,6 +43,7 @@ unzip ec2-api-tools.zip
 ln -s ec2-ami-tools-* ec2-ami-tools
 ln -s ec2-api-tools-* ec2-api-tools
 rm *.zip
+</pre>
 
 * An Amazon EC2 account. You must add the following to your environment prior to starting irb:
 * Ruby support
@@ -69,7 +73,7 @@ h1. Downloading hbase-ec2
 
 pre. 
 git clone git://github.com/mlai/hbase-ec2.git ~/hbase-ec2
-git checkout --track -b origin/ycsb ycsb
+git checkout --track -b ycsb origin/ycsb 
 
 h1. Usage
 
@@ -83,8 +87,9 @@ Use the ycsb recipe to start and stop the test.
 
 You need to edit the recipes/ycsb.rb to configure your cluster and test.
 
-pre.
+<pre>
 $ bin/ec2sh recipes/ycsb.rb
+</pre>
 
 It will:
 * start the cluster at EC2
