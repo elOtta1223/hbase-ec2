@@ -106,10 +106,10 @@ MESSAGE_END
     reportDetail=""
     reportDetail += "<br><b>Test Summary: </b><br>\n"
     
-    formattedTime = testStartTime.strftime("%Y-%m-%d %H:%M:%S")
+    formattedTime = testStartTime.strftime("%Y-%m-%d %H:%M:%S %z")
     reportDetail += "Test start time: #{formattedTime}<br>\n"
     
-    formattedTime = testEndTime.strftime("%Y-%m-%d %H:%M:%S")
+    formattedTime = testEndTime.strftime("%Y-%m-%d %H:%M:%S %z")
     reportDetail += "Test end time: #{formattedTime}<br>\n"
     
     reportDetail += "# of RS: #{@num_regionservers}<br>\n"
