@@ -1,19 +1,14 @@
 h1. Introduction 
 
-hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of 
-"Amazon EC2":http://aws.amazon.com/ instances as a single 
-"HBase":http://hbase.apache.org cluster.
+hbase-ec2 is a "Ruby":http://ruby-lang.org library to help manage a set of "Amazon EC2":http://aws.amazon.com/ instances as a single "HBase":http://hbase.apache.org cluster.
 
-"YCSB":https://github.com/brianfrankcooper/YCSB is a framework and common set
-of workloads for evaluating the performance of different "key-value"
-and "cloud" serving stores. It can support HBase, Cassandra, MongoDB, PNUT, 
-and Voldemort now.
+"YCSB":https://github.com/brianfrankcooper/YCSB is a framework and common set of workloads for evaluating the performance of different "key-value" and "cloud" serving stores. It can support HBase, Cassandra, MongoDB, PNUT, and Voldemort now.
 
 This package is derived from HBase EC2 script, and support to run YCSB tests 
 against a HBase cluster deployed at EC2. 
 
 h2. Credits
-* Andrew Purtell: original developer
+* Andrew Purtell: original development
 * Eugene Koontz: added Ruby support
 * Yahoo: YCSB 
 
@@ -22,9 +17,9 @@ h1. Contents
 hbase-ec2 is currently supplied as a set of ruby files that currently is :
 
 * lib/hcluster.rb : the Hadoop::HCluster and Hadoop::HImage class definitions
-* lib/YcsbCluster.rb : a subclass of HCluster, intended for testing HBase 
-functionality with YCSB.
+* lib/YcsbCluster.rb : a subclass of HCluster, intended for testing HBase functionality with YCSB.
 * recipes/ycsb.rb : a recipe to invoke HBase + YCSB cluster.
+* YCSB: this script downloads (wget) a YCSB tar from s3 server. And the YCSB was built with minor modifications: 1) it creates a user table without manually involvement in order to support automation, while origin YCSB needs you to create the table. 2) some minor improvement to reduce duplicated log entries. 3) source code can be found here: https://github.com/mlai/ycsb  
 
 h1. Prerequisites
 
