@@ -102,7 +102,9 @@ def getGitChangesSinceLastTime(workDir, repo, remote, branch, lastTime)
     ensure  
       p "Open git dire: " + workDir + ". Start to pull from remote/branch: " + 
         remote + "/" + branch
-      g.pull(remote, branch)
+      #g.pull(remote, branch)
+      g.fetch(remote)
+      g.merge(remote)
       g.branch(branch)
       p "Check changes from " + lastTime.strftime("%Y-%m-%d %H:%M:%S %z")
       changes = g.log().since(lastTime.strftime("%Y-%m-%d %H:%M:%S %z")).to_s
