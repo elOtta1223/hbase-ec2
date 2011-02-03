@@ -1,12 +1,27 @@
+version = "0.90-tm-5"
+
 options = {
-  :label => 'hbase-us-east-1-0.21-S-append-SNAPSHOT-x86_64', 
+  :label => "hbase-#{version}-x86_64",
+  :master_instance_type => "m1.large",
+  :rs_instance_type => "c1.xlarge",
+  :zk_instance_type => "m1.large",
+  :num_zookeepers => 1,
   :num_regionservers => 3,
-  :security_group_prefix => 'secappend'
+  :security_group_prefix => "hcluster",
+  :debug_level => 1,
+  :hbase_debug_level => "INFO",
+  :owner_id => '801535628028'
 }
-cluster = @hcluster.new options
+
+@cluster = Hadoop::SecureCluster
+cluster = @cluster.new options
+
 cluster.launch
 
-cluster.ssh("cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/#{cluster.master.privateDnsName.downcase}; bin/hadoop fs -mkdir /hbase; bin/hadoop fs -chown hbase /hbase")
-cluster.ssh("/usr/local/hbase-*/bin/hbase-daemon.sh start master")
-cluster.slaves.each {|slave|
-  @hcluster.ssh_to(slave.dnsName, "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver")}
+# Print cluster info and exit
+s = "MASTER: #{cluster.master.dnsName}\n"
+s += "SECONDARY: #{cluster.secondary.dnsName}\n" 
+cluster.zks.each {|inst| s += "ZK: #{inst.dnsName}\n"}
+cluster.slaves.each {|inst| s += "SLAVE: #{inst.dnsName}\n"}
+cluster.aux.each {|inst| s += "AUX: #{inst.dnsName}\n"}
+print s

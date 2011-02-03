@@ -445,9 +445,7 @@ module Hadoop
       puts "ooops..maybe you didn't define AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY? "
     end
     
-    attr_reader :zks, :master, :slaves, :aux, :zone, :zk_image_label,
-    :master_image_label, :slave_image_label, :aux_image_label, :owner_id,
-    :image_creator,:options,:hbase_version,:hbase_debug_level, :aws_connection
+    attr_reader :zks, :master, :secondary, :slaves, :aux, :zone, :zk_image_label, :master_image_label, :slave_image_label, :aux_image_label, :owner_id, :image_creator,:options,:hbase_version,:hbase_debug_level, :aws_connection
     
     def initialize_print_usage
       puts ""
@@ -604,6 +602,7 @@ module Hadoop
       
       @zks = []
       @master = nil
+      @secondary = nil
       @slaves = []
       @aux = []
       @ssh_input = []
@@ -640,6 +639,7 @@ module Hadoop
         @zk_security_group = @security_group_prefix + "-zk"
         @rs_security_group = @security_group_prefix
         @master_security_group = @security_group_prefix + "-master"
+        @secondary_security_group = @security_group_prefix + "-secondary"
         @aux_security_group = @security_group_prefix + "-aux"
       else
         @zk_security_group = @security_group_prefix
@@ -669,6 +669,8 @@ module Hadoop
       else
         @master_instance_type = "m1.large"
       end
+      @secondary_instance_type = @master_instance_type
+
       @state = "Initialized"
       
       sync
@@ -718,39 +720,41 @@ module Hadoop
       describe_instances.reservationSet.item.each do |ec2_instance_set|
         security_group = ec2_instance_set.groupSet.item[0].groupId
         if (security_group == @security_group_prefix)
-        instances = ec2_instance_set.instancesSet.item
-        instances.each {|inst|
-          if (inst.instanceState.name != 'terminated')
-            @slaves.push(inst)
-          end
-        }
-        else
-          if (security_group == (@security_group_prefix + "-zk"))
-            instances = ec2_instance_set.instancesSet.item
-            instances.each {|inst|
-              if (inst['instanceState']['name'] != 'terminated')
-                @zks.push(inst)
-              end
-          }
-          else
-            if (security_group == (@security_group_prefix + "-master"))
-              if ec2_instance_set.instancesSet.item[0].instanceState.name != 'terminated'
-                @master = ec2_instance_set.instancesSet.item[0]
-                @state = @master.instanceState.name
-                @dnsName = @master.dnsName
-                @launchTime = @master.launchTime
-              end
-            else
-              if (security_group == (@security_group_prefix + "-aux"))
-                instances = ec2_instance_set.instancesSet.item
-                instances.each {|inst|
-                if (inst['instanceState']['name'] != 'terminated')
-                  @aux.push(inst)
-                end
-              }
-              end
+          instances = ec2_instance_set.instancesSet.item
+          instances.each {|inst|
+            if (inst.instanceState.name != 'terminated')
+              @slaves.push(inst)
             end
+          }
+        end
+        if (security_group == (@security_group_prefix + "-zk"))
+          instances = ec2_instance_set.instancesSet.item
+          instances.each {|inst|
+            if (inst['instanceState']['name'] != 'terminated')
+              @zks.push(inst)
+            end
+          }
+        end
+        if (security_group == (@security_group_prefix + "-master"))
+          if ec2_instance_set.instancesSet.item[0].instanceState.name != 'terminated'
+            @master = ec2_instance_set.instancesSet.item[0]
+            @state = @master.instanceState.name
+            @dnsName = @master.dnsName
+            @launchTime = @master.launchTime
           end
+        end
+        if (security_group == (@security_group_prefix + "-secondary"))
+          if ec2_instance_set.instancesSet.item[0].instanceState.name != 'terminated'
+            @secondary = ec2_instance_set.instancesSet.item[0]
+          end
+        end
+        if (security_group == (@security_group_prefix + "-aux"))
+          instances = ec2_instance_set.instancesSet.item
+          instances.each {|inst|
+            if (inst['instanceState']['name'] != 'terminated')
+              @aux.push(inst)
+            end
+          }
         end
         i = i+1
       end
@@ -913,6 +917,10 @@ module Hadoop
       end
       launch_master(options)
       if debug_level > 0
+        puts("Launching secondary");
+      end
+      launch_secondary(options)
+      if debug_level > 0
         puts("Launching slaves");
       end
       launch_slaves(options)
@@ -949,6 +957,7 @@ module Hadoop
       # create security groups if necessary.
       groups = describe_security_groups
       found_master = false
+      found_secondary = false
       found_rs = false
       found_zk = false
       found_aux = false
@@ -957,9 +966,12 @@ module Hadoop
         if group['groupName'] =~ /^#{@security_group_prefix}$/
           found_rs = true
         end
-      if group['groupName'] =~ /^#{@security_group_prefix}-master$/
-        found_master = true
-      end
+        if group['groupName'] =~ /^#{@security_group_prefix}-master$/
+          found_master = true
+        end
+        if group['groupName'] =~ /^#{@security_group_prefix}-secondary$/
+          found_secondary = true
+        end
         if group['groupName'] =~ /^#{@security_group_prefix}-zk$/
           found_zk = true
         end
@@ -967,6 +979,8 @@ module Hadoop
           found_aux = true
         end
       }
+
+      created = false
       
       if (found_aux == false)
         puts "creating new security group: #{@security_group_prefix}-aux"
@@ -974,6 +988,7 @@ module Hadoop
                                 :group_name => "#{@security_group_prefix}-aux",
                                 :group_description => "Group for HBase Auxiliaries."
                               })
+        created = true
       end
       
       if (found_rs == false) 
@@ -982,6 +997,7 @@ module Hadoop
                                 :group_name => "#{@security_group_prefix}",
                                 :group_description => "Group for HBase Slaves."
                               })
+        created = true
       end
       
       if (found_master == false) 
@@ -990,6 +1006,16 @@ module Hadoop
                                 :group_name => "#{@security_group_prefix}-master",
                                 :group_description => "Group for HBase Master."
                               })
+        created = true
+      end
+      
+      if (found_secondary == false) 
+        puts "creating new security group: #{@security_group_prefix}-secondary"
+        create_security_group({
+                                :group_name => "#{@security_group_prefix}-secondary",
+                                :group_description => "Group for HBase Secondary."
+                              })
+        created = true
       end
       
       if (found_zk == false) 
@@ -998,14 +1024,16 @@ module Hadoop
                                 :group_name => "#{@security_group_prefix}-zk",
                                 :group_description => "Group for HBase Zookeeper quorum."
                               })
+        created = true
       end
+
+      if created == true
+        groups2 = ["#{@security_group_prefix}", "#{@security_group_prefix}-master", "#{@security_group_prefix}-secondary", "#{@security_group_prefix}-zk", "#{@security_group_prefix}-aux"]
       
-      groups2 = ["#{@security_group_prefix}","#{@security_group_prefix}-master","#{@security_group_prefix}-zk","#{@security_group_prefix}-aux"]
-      
-      # <allow ssh to each instance from anywhere.>
-      groups2.each {|group|
-        begin
-          authorize_security_group_ingress(
+        # <allow ssh to each instance from anywhere.>
+        groups2.each {|group|
+          begin
+            authorize_security_group_ingress(
                                            {
                                              :group_name => group,
                                              :from_port => 22,
@@ -1014,29 +1042,31 @@ module Hadoop
                                              :ip_protocol => "tcp"
                                            }
                                            )
-        rescue AWS::InvalidPermissionDuplicate
-          # authorization already exists - no problem.
-        rescue NoMethodError
-          # AWS::EC2::Base::HCluster internal error: fix AWS::EC2::Base
-          puts "Sorry, AWS::EC2::Base internal error; please retry launch."
-          return
-        end
+          rescue AWS::InvalidPermissionDuplicate
+            # authorization already exists - no problem.
+          rescue NoMethodError
+            # AWS::EC2::Base::HCluster internal error: fix AWS::EC2::Base
+            puts "Sorry, AWS::EC2::Base internal error; please retry launch."
+            return
+          end
         
-        #reciprocal full access for each security group.
-        groups2.each {|other_group|
-          begin
-            authorize_security_group_ingress(
+          #reciprocal full access for each security group.
+          groups2.each {|other_group|
+            begin
+              authorize_security_group_ingress(
                                              {
                                                :group_name => group,
                                                :source_security_group_name => other_group
                                              }
                                              )
-          rescue AWS::InvalidPermissionDuplicate
-            # authorization already exists - no problem.
-          end
+              sleep 1
+            rescue AWS::InvalidPermissionDuplicate
+              # authorization already exists - no problem.
+            end
+          }
         }
-      }
-      
+        sleep 1
+      end
     end
     
     def HCluster.do_launch(options,name="",on_boot = nil)
@@ -1138,9 +1168,25 @@ module Hadoop
       options[:availability_zone] = @zone
       options[:key_name] = @key_name
 
-      @master = HCluster.do_launch(options,"master",lambda{|instances| setup_master(instances[0],
-                                                                                    options[:stdout_handler],options[:stderr_handler],
-                                                                                    options[:extra_packages])})[0]
+      @master = HCluster.do_launch(options,"master",lambda{|instances| setup_master(instances[0], options[:stdout_handler],options[:stderr_handler], options[:extra_packages])})[0]
+    end
+    
+    def launch_secondary(options = {})
+      options = {
+        :stdout_handler => HCluster::summarize_stdout,
+        :stderr_handler => HCluster::summarize_stderr,
+        :extra_packages => ""
+      }.merge(options)
+
+      options[:ami] = master_image['imageId'] 
+      options[:min_count] = 1
+      options[:max_count] = 1
+      options[:security_group] = @secondary_security_group
+      options[:instance_type] = @secondary_instance_type
+      options[:availability_zone] = @zone
+      options[:key_name] = @key_name
+
+      @secondary = HCluster.do_launch(options,"secondary",lambda{|instances| setup_secondary(instances[0], options[:stdout_handler],options[:stderr_handler], options[:extra_packages])})[0]
     end
     
     def launch_slaves(options = {})
@@ -1198,20 +1244,25 @@ module Hadoop
       end
 
       zks.each { |zk|
-
         # if no zone specified by user, use the zone that AWS chose for the first
         # instance launched in the cluster (the first zookeeper).
         @zone = zk.placement['availabilityZone'] if !@zone
-
         if @debug_level > 0
           puts "zk dnsname: #{zk.dnsName}"
         end
-        HCluster::scp_to(zk.dnsName,File.dirname(__FILE__) +"/../bin/hbase-ec2-init-zookeeper-remote.sh","/var/tmp")
-        HCluster::ssh_to(zk.dnsName,
+        ready = false
+        until ready
+          begin
+            HCluster::scp_to(zk.dnsName,File.dirname(__FILE__) +"/../bin/hbase-ec2-init-zookeeper-remote.sh","/var/tmp")
+            HCluster::ssh_to(zk.dnsName,
                          "sh -c \"ZOOKEEPER_QUORUM=\\\"#{@zookeeper_quorum}\\\" sh /var/tmp/hbase-ec2-init-zookeeper-remote.sh\"",
                          stdout_handler,stderr_handler,
                          "[setup:zk:#{zk.dnsName}",
                          "]\n")
+            ready = true
+          rescue
+          end
+        end
       }
     end
 
@@ -1221,39 +1272,62 @@ module Hadoop
       @master = master
       
       HCluster::until_ssh_able([master], @debug_level)
-      
-      @master.state = "running"
-      # <ssh key>
-      HCluster::scp_to(master.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
-      #FIXME: should be 400 probably.
-      HCluster::ssh_to(master.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
-      # </ssh key>
-      
-      # <master init script>
-      init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
-      HCluster::scp_to(master.dnsName,init_script,"/root/#{@@remote_init_script}")
-      HCluster::ssh_to(master.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-      # NOTE : needs zookeeper quorum: requires zookeeper to have come up.
-      if @debug_level > 0
-        puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+
+      ready = false
+      until ready
+        begin
+          HCluster::scp_to(master.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+          HCluster::ssh_to(master.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+          init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
+          HCluster::scp_to(master.dnsName,init_script,"/root/#{@@remote_init_script}")
+          HCluster::ssh_to(master.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+          if @debug_level > 0
+            puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+          end
+          HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:master:#{master.dnsName}","]\n")
+          ready = true
+        rescue
+        end
       end
-      HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:master:#{master.dnsName}","]\n")
+
+      @master.state = "running"
+    end
+    
+    def setup_secondary(secondary = @secondary, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, extra_packages = "")
+      init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
+      HCluster::until_ssh_able([secondary], @debug_level)
+      ready = false
+      until ready
+        begin
+          HCluster::scp_to(secondary.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+          HCluster::ssh_to(secondary.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+          HCluster::scp_to(secondary.dnsName,init_script,"/root/#{@@remote_init_script}")
+          HCluster::ssh_to(secondary.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+          puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+          HCluster::ssh_to(secondary.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:secondary:#{secondary.dnsName}","]\n")
+          ready = true
+        rescue
+        end
+      end
     end
     
     def setup_slaves(slaves = @slaves, stdout_handler = HCluster::summarize_output, stderr_handler = HCluster::summarize_output, extra_packages = "")
       init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
       HCluster::until_ssh_able(slaves, @debug_level)
       slaves.each {|inst|
-        # <ssh key>
-        HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
-        #FIXME: should be 400 probably.
-        HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
-        # </ssh key>
-        
-        HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
-        HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-        puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
-        HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:rs:#{inst.dnsName}","]\n")
+        ready = false
+        until ready
+          begin
+            HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+            HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+            HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
+            HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+            puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:rs:#{inst.dnsName}","]\n")
+            ready = true
+          rescue
+          end
+        end
       }
     end
 
@@ -1261,18 +1335,21 @@ module Hadoop
       init_script = File.dirname(__FILE__) +"/../bin/#{@@remote_init_script}"
       HCluster::until_ssh_able(aux, @debug_level)
       aux.each {|inst|
-        # <ssh key>
-        HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
-        #FIXME: should be 400 probably.
-        HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
-        # </ssh key>
-        
-        HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
-        HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
-        if @debug_level > 0
-          puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+        ready = false
+        until ready
+          begin
+            HCluster::scp_to(inst.dnsName,"#{EC2_ROOT_SSH_KEY}","/root/.ssh/id_rsa")
+            HCluster::ssh_to(inst.dnsName,"chmod 600 /root/.ssh/id_rsa",HCluster::consume_output,HCluster::consume_output,nil,nil)
+            HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
+            HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
+            if @debug_level > 0
+              puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
+            end
+            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:aux:#{inst.dnsName}","]\n")
+            ready = true
+          rescue
+          end
         end
-        HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:aux:#{inst.dnsName}","]\n")
       }
     end
     
@@ -1296,6 +1373,13 @@ module Hadoop
         terminate_instances(options)
       end
       @master = nil
+      if @secondary && @secondary.instanceId
+        options = {}
+        options[:instance_id] = @secondary.instanceId
+        puts "terminating secondary: #{@secondary.instanceId}"
+        terminate_instances(options)
+      end
+      @secondary = nil
     end
     
     def terminate_slaves
@@ -1456,9 +1540,9 @@ module Hadoop
           command = gets
         end
         Net::SSH.start(host,'root',
-                       :keys => [EC2_ROOT_SSH_KEY],
-                       :paranoid => false
-                       ) do |ssh|
+                             :keys => [EC2_ROOT_SSH_KEY],
+                             :paranoid => false
+                             ) do |ssh|
           stdout = ""
           channel = ssh.open_channel do |ch|
             channel.exec(command) do |ch, success|
@@ -1504,7 +1588,6 @@ module Hadoop
         raise HClusterStateError,
         "This HCluster has no master hostname. Cluster summary:\n#{self.to_s}\n" if (host == nil)
       end
-      
       HCluster.ssh_with_host(command,stdout_line_reader,stderr_line_reader,host,begin_output,end_output)
     end
 
@@ -1533,15 +1616,26 @@ module Hadoop
       HCluster.scp_to(host,local_path,remote_path_without_host)
     end
 
+    def scp_to(host,local_path,remote_path)
+      HCluster::scp_to(host,local_path,remote_path)
+    end
+
     def HCluster.scp_to(host,local_path,remote_path)
       #http://net-ssh.rubyforge.org/scp/v1/api/classes/Net/SCP.html#M000005
       # paranoid=>false because we should ignore known_hosts, since AWS IPs get frequently recycled
       # and their servers' private keys will vary.
-      Net::SCP.start(host,'root',
-                     :keys => [EC2_ROOT_SSH_KEY],
-                     :paranoid => false
-                     ) do |scp|
-        scp.upload! local_path,remote_path
+      done = false
+      unless done
+        begin
+          Net::SCP.start(host,'root',
+                         :keys => [EC2_ROOT_SSH_KEY],
+                         :paranoid => false
+                         ) do |scp|
+              scp.upload! local_path,remote_path
+            end
+          done = true
+        rescue
+        end
       end
     end
     

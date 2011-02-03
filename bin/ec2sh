@@ -22,6 +22,7 @@
 #   => [#<AWS::EC2::Item image_location...
 
 hbase_ec2_lib   = File.dirname(__FILE__) + '/../lib/hcluster'
+secure_hbase_ec2_lib   = File.dirname(__FILE__) + '/../lib/securecluster'
 setup = File.dirname(__FILE__) + '/setup'
 irb_name = RUBY_PLATFORM =~ /mswin32/ ? 'irb.bat' : 'irb'
 if ( ENV['AWS_ACCESS_KEY_ID'] )
@@ -65,7 +66,7 @@ if ( ENV['AMAZON_ACCESS_KEY_ID'] && ENV['AMAZON_SECRET_ACCESS_KEY'] )
 
     puts welcome_message
   end
-  exec "#{irb_name} -rubygems -r #{hbase_ec2_lib} -r #{setup} --simple-prompt #{ARGV}"
+  exec "#{irb_name} -rubygems -r #{hbase_ec2_lib} -r #{secure_hbase_ec2_lib} -r #{setup} --simple-prompt #{ARGV}"
 else
   puts "You must define AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as shell environment variables before running #{$0}!"
 end
