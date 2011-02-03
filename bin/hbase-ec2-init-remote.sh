@@ -8,7 +8,6 @@ export JAVA_HOME=/usr/local/jdk1.6.0_23
 ln -s $JAVA_HOME /usr/local/jdk
 SECURITY_GROUPS=`wget -q -O - http://169.254.169.254/latest/meta-data/security-groups`
 IS_MASTER=`echo $SECURITY_GROUPS | awk '{ a = match ($0, "-master$"); if (a) print "true"; else print "false"; }'`
-IS_AUX=`echo $SECURITY_GROUPS | awk '{ a = match ($0, "-aux$"); if (a) print "true"; else print "false"; }'`
 if [ "$IS_MASTER" = "true" ]; then
  MASTER_HOST=`wget -q -O - http://169.254.169.254/latest/meta-data/local-hostname`
 fi
@@ -17,7 +16,7 @@ HADOOP_HOME=`ls -d /usr/local/hadoop-* | grep -v tar.gz | head -n1`
 HADOOP_VERSION=`echo $HADOOP_HOME | cut -d '-' -f 2`
 HBASE_HOME=`ls -d /usr/local/hbase-* | grep -v tar.gz | head -n1`
 HBASE_VERSION=`echo $HBASE_HOME | cut -d '-' -f 2`
-HADOOP_SECURE_DN_USER=hadoop
+HADOOP_SECURE_USER=hadoop
 HOSTNAME=`hostname --fqdn | awk '{print tolower($1)}'`
 HOST_IP=$(host $HOSTNAME | awk '{print $4}')
 export USER="root"
@@ -149,7 +148,9 @@ fi
 umount /mnt
 mkfs.xfs -f /dev/sdb
 mount -o noatime /dev/sdb /mnt
-mkdir -p /mnt/hadoop/dfs/data
+mkdir -p /mnt/hadoop/dfs/data /mnt/mapred/local /mnt/hadoop/logs /mnt/hbase/logs
+chmod 01777 /mnt/hadoop/logs
+chown -R $HADOOP_SECURE_USER:root /mnt/hadoop /mnt/mapred /mnt/hbase
 DFS_NAME_DIR="/mnt/hadoop/dfs/name"
 DFS_DATA_DIR="/mnt/hadoop/dfs/data"
 MAPRED_LOCAL_DIR="/mnt/mapred/local"
@@ -163,11 +164,10 @@ for d in c d e f g h i j k l m n o p q r s t u v w x y z; do
    DFS_NAME_DIR="${DFS_NAME_DIR},${m}/hadoop/dfs/name"
   fi
   mkdir -p ${m}/hadoop/dfs/data
-  chown $HADOOP_SECURE_DN_USER:root ${m}/hadoop/dfs/data
   DFS_DATA_DIR="${DFS_DATA_DIR},${m}/hadoop/dfs/data"
   mkdir -p ${m}/mapred/local
-  chown $HADOOP_SECURE_DN_USER:root ${m}/mapred/local
   MAPRED_LOCAL_DIR="${MAPRED_LOCAL_DIR},${m}/mapred/local"
+  chown -R $HADOOP_SECURE_USER:root ${m}/hadoop ${m}/mapred
   i=$(( i + 1 ))
  fi
 done
@@ -192,7 +192,11 @@ else
 fi
 cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
 export HADOOP_OPTS="$HADOOP_OPTS -Djavax.security.auth.useSubjectCredsOnly=false"
-export HADOOP_SECURE_DN_USER=hadoop
+export HADOOP_NAMENODE_USER=$HADOOP_SECURE_USER
+export HADOOP_SECONDARYNAMENODE_USER=$HADOOP_SECURE_USER
+export HADOOP_DATANODE_USER=$HADOOP_SECURE_USER
+export HADOOP_JOBTRACKER_USER=$HADOOP_SECURE_USER
+export HADOOP_TASKTRACKER_USER=$HADOOP_SECURE_USER
 EOF
 ( cd /usr/local && ln -s $HADOOP_HOME hadoop ) || true
 cat > $HADOOP_HOME/conf/core-site.xml <<EOF
@@ -247,7 +251,7 @@ cat > $HADOOP_HOME/conf/hdfs-site.xml <<EOF
 </property>
 <property>
  <name>dfs.datanode.handler.count</name>
- <value>10</value>
+ <value>100</value>
 </property>
 <property>
  <name>dfs.datanode.max.xcievers</name>
@@ -260,6 +264,10 @@ cat > $HADOOP_HOME/conf/hdfs-site.xml <<EOF
 <property>
  <name>dfs.https.port</name>
  <value>50475</value>
+</property>
+<property>
+ <name>dfs.datanode.failed.volumes.tolerated</name>
+ <value>2</value>
 </property>
 <property>
  <name>dfs.namenode.keytab.file</name>
@@ -302,6 +310,10 @@ cat > $HADOOP_HOME/conf/hdfs-site.xml <<EOF
  <value>hadoop/$HOSTNAME@HADOOP.LOCALDOMAIN</value>
 </property>
 <property>
+ <name>dfs.datanode.require.secure.ports</name>
+ <value>false</value>
+</property>
+<property>
  <name>dfs.block.access.token.enable</name>
  <value>true</value>
 </property>
@@ -314,10 +326,6 @@ cat > $HADOOP_HOME/conf/mapred-site.xml <<EOF
 <property>
  <name>mapred.job.tracker</name>
  <value>$MASTER_HOST:8021</value>
-</property>
-<property>
- <name>io.compression.codecs</name>
- <value>org.apache.hadoop.io.compress.GzipCodec,org.apache.hadoop.io.compress.DefaultCodec,org.apache.hadoop.io.compress.BZip2Codec,com.hadoop.compression.lzo.LzoCodec,com.hadoop.compression.lzo.LzopCodec</value>
 </property>
 <property>
  <name>mapreduce.jobtracker.keytab.file</name>
@@ -372,8 +380,8 @@ cat > $HADOOP_HOME/conf/mapred-site.xml <<EOF
  <value></value>
 </property>
 <property>
- <name>io.compression.codec.lzo.class</name>
- <value>com.hadoop.compression.lzo.LzoCodec</value>
+ <name>mapred.map.tasks</name>
+ <value>4</value>
 </property>
 </configuration>
 EOF
@@ -381,7 +389,11 @@ cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
 export JAVA_HOME=/usr/local/jdk
 EOF
 cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
-HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/zookeeper-3.3.1.jar:$HBASE_HOME/conf"
+HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/zookeeper-3.3.2.jar:$HBASE_HOME/conf"
+export HADOOP_NAMENODE_OPTS="-Xms4000m -Xmx4000m -XX:+UseMembar -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+UseParNewGC -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps"
+export HADOOP_SECONDARYNAMENODE_OPTS="$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-secondarynamenode-gc.log"
+export HADOOP_NAMENODE_OPTS="$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-namenode-gc.log"
+export HADOOP_DATANODE_OPTS="-Xms1000m -Xmx1000m -XX:+UseMembar -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+UseParNewGC"
 EOF
 cat > $HADOOP_HOME/conf/hadoop-metrics.properties <<EOF
 dfs.class=org.apache.hadoop.metrics.ganglia.GangliaContext
@@ -432,12 +444,12 @@ cat > $HBASE_HOME/conf/hbase-site.xml <<EOF
  <value>100</value>
 </property>
 <property>
- <name>hbase.hstore.blockingStoreFiles</name>
- <value>15</value>
+ <name>hbase.hregion.memstore.block.multiplier</name>
+ <value>8</value>
 </property>
 <property>
- <name>hbase.hregion.memstore.block.multiplier</name>
- <value>3</value>
+ <name>hbase.hstore.blockingStoreFiles</name>
+ <value>25</value>
 </property>
 <property>
  <name>hbase.client.keyvalue.maxsize</name>
@@ -454,6 +466,22 @@ cat > $HBASE_HOME/conf/hbase-site.xml <<EOF
 <property>
  <name>hbase.tmp.dir</name>
  <value>/mnt/hbase</value>
+</property>
+<!-- default scanner caching is 1, this is terrible for performance -->
+<property>
+ <name>hbase.client.scanner.caching</name>
+ <value>100</value>
+</property>
+<!-- we want to decouple store latency from HDFS load, so a small window of
+  possible data loss is acceptable as a trade off: up to 10 seconds, or up
+  to 100 entries -->
+<property>
+ <name>hbase.regionserver.optionallogflushinterval</name>
+ <value>10000</value>
+</property>
+<property>
+ <name>hbase.regionserver.flushlogentries</name>
+ <value>100</value>
 </property>
 <property>
  <name>hbase.master.keytab.file</name>
@@ -504,9 +532,10 @@ ln -s $HADOOP_HOME/conf/hdfs-site.xml $HBASE_HOME/conf
 ln -s $HADOOP_HOME/conf/mapred-site.xml $HBASE_HOME/conf
 cat >> $HBASE_HOME/conf/hbase-env.sh <<EOF
 export JAVA_HOME=/usr/local/jdk
-export HBASE_MASTER_OPTS="-Xms2000m -Xmx2000m -XX:+UseConcMarkSweepGC -XX:+UseParNewGC -XX:NewSize=128m -XX:MaxNewSize=128m -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-master-gc.log"
-export HBASE_REGIONSERVER_OPTS="-Xms4000m -Xmx4000m -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:CMSInitiatingOccupancyFraction=80 -XX:+UseParNewGC -XX:NewSize=128m -XX:MaxNewSize=128m -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-regionserver-gc.log"
-EOF
+export HBASE_MASTER_HEAPSIZE=2000
+export HBASE_MASTER_OPTS="-XX:+UseMembar -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-master-gc.log"
+export HBASE_REGIONSERVER_HEAPSIZE=4000
+export HBASE_REGIONSERVER_OPTS="-XX:+UseMembar -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps -Xloggc:/mnt/hbase/logs/hbase-regionserver-gc.log"
 EOF
 sed -i -e "s/hadoop.hbase=DEBUG/hadoop.hbase=$LOG_SETTING/g" $HBASE_HOME/conf/log4j.properties
 cat > $HBASE_HOME/conf/hadoop-metrics.properties <<EOF
@@ -523,6 +552,4 @@ webtable.class=org.apache.hadoop.metrics.ganglia.GangliaContext
 webtable.period=10
 webtable.servers=$MASTER_HOST:8649
 EOF
-mkdir -p /mnt/hadoop/logs /mnt/hbase/logs
-chmod 777 /mnt/hadoop/logs
 rm -f /var/ec2/ec2-run-user-data.*

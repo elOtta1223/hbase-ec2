@@ -34,23 +34,25 @@ EC2_CERT=
 EC2_ROOT_SSH_KEY=
 
 # The version of HBase to use.
-HBASE_VERSION=0.20-tm-3
+HBASE_VERSION=0.90-tm-5
+#HBASE_VERSION=0.90.0
 
-HBASE_URL=http://tm-files.s3.amazonaws.com/hbase/hbase-$HBASE_VERSION.tar.gz
+HBASE_URL=http://tm-aws-4-files.s3.amazonaws.com/hbase/hbase-$HBASE_VERSION.tar.gz
 
 # The version of Hadoop to use.
-HADOOP_VERSION=0.20-tm-3
+HADOOP_VERSION=0.20-tm-5
+#HADOOP_VERSION=0.20.2-append
 
-HADOOP_URL=http://tm-files.s3.amazonaws.com/hadoop/hadoop-$HADOOP_VERSION.tar.gz
+HADOOP_URL=http://tm-aws-4-files.s3.amazonaws.com/hadoop/hadoop-$HADOOP_VERSION.tar.gz
 
-LZO_URL=http://tm-files.s3.amazonaws.com/hadoop/lzo-linux-$HADOOP_VERSION.tar.gz
+LZO_URL=http://tm-aws-4-files.s3.amazonaws.com/hadoop/lzo-linux-$HADOOP_VERSION.tar.gz
 
 # The Amazon EC2 bucket for images
-REGION=us-east-1
-#REGION=us-west-1
+#REGION=us-east-1
+REGION=us-west-1
 #REGION=eu-west-1
 #REGION=ap-southeast-1
-S3_BUCKET=tm-bundles-$REGION
+S3_BUCKET=tm-aws-4-bundles-$REGION
 # Account for bucket
 # We need this because S3 is returning account identifiers instead of bucket
 # names.
@@ -88,7 +90,7 @@ getCredentialSetting 'EC2_PRIVATE_KEY'
 getCredentialSetting 'EC2_CERT'
 getCredentialSetting 'EC2_ROOT_SSH_KEY'
 
-export EC2_URL=https://$REGION.ec2.amazonaws.com
+export EC2_URL=${EC2_URL:-https://$REGION.ec2.amazonaws.com}
 
 # SSH options used when connecting to EC2 instances.
 SSH_OPTS=`echo -q -i "$EC2_ROOT_SSH_KEY" -o StrictHostKeyChecking=no -o ServerAliveInterval=30`
@@ -125,17 +127,17 @@ AUX_INSTANCES_PATH=$HOME/.hbase-${CLUSTER}-aux-instances
 USER_DATA_FILE=hbase-ec2-init-remote.sh
 
 # The version number of the installed JDK.
-JAVA_VERSION=1.6.0_20
+JAVA_VERSION=1.6.0_23
 
 JAVA_URL=http://tm-files.s3.amazonaws.com/jdk/jdk-${JAVA_VERSION}-linux-@arch@.bin
 
 # SUPPORTED_ARCHITECTURES = ['i386', 'x86_64']
 if [ "$SLAVE_INSTANCE_TYPE" = "m1.small" -o "$SLAVE_INSTANCE_TYPE" = "c1.medium" ]; then
   SLAVE_ARCH='i386'
-  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-48aa4921"}  # ec2-public-images/fedora-8-i386-base-v1.10.manifest.xml
+  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-810657c4"}
 else
   SLAVE_ARCH='x86_64'
-  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-f61dfd9f"}  # ec2-public-images/fedora-8-x86_64-base-v1.10.manifest.xml
+  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-870657c2"}
 fi
 
 if [ "$MASTER_INSTANCE_TYPE" = "m1.small" -o "$MASTER_INSTANCE_TYPE" = "c1.medium" ]; then

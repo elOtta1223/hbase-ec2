@@ -3,66 +3,10 @@ require 'net/smtp'
 
 module Hadoop
 
-class YcsbCluster < HCluster
-      
-  def startHadoop
-    #
-    # Initialize and start Hadoop (HDFS and MapReduce)
-    #
-    
-    ssh("cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/#{master.privateDnsName.downcase}; bin/hadoop namenode -format")
-    
-    ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start namenode")
-    slaves.each {|inst|
-      ssh_to(inst.dnsName,
-        "/usr/local/hadoop-*/bin/hadoop-daemon.sh start datanode") }
-    
-    ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /mapred/system; bin/hadoop fs -chown hadoop /mapred/system")
-    
-    ssh("/usr/local/hadoop-*/bin/hadoop-daemon.sh start jobtracker")
-    slaves.each {|inst|
-      ssh_to(inst.dnsName,
-        "/usr/local/hadoop-*/bin/hadoop-daemon.sh start tasktracker") }
-  end
-  
-  def startHBase 
-    #
-    # Initialize and start HBase
-    #
-    ssh("cd /usr/local/hadoop-* ; bin/hadoop fs -mkdir /hbase; bin/hadoop fs -chown hbase /hbase")
-    
-    ssh("/usr/local/hbase-*/bin/hbase-daemon.sh start master")
-    slaves.each {|inst|
-      ssh_to(inst.dnsName,
-        "/usr/local/hbase-*/bin/hbase-daemon.sh start regionserver") }
-  end
-  
-  def stopHBase 
-    #
-    # Initialize and start HBase
-    
-    slaves.each {|inst|
-      ssh_to(inst.dnsName,
-        "/usr/local/hbase-*/bin/hbase-daemon.sh stop regionserver") }
-    ssh("/usr/local/hbase-*/bin/hbase-daemon.sh stop master")
-  end
-
-  def uploadHBaseJar(filePath)
-    # TODO: make sure hbase is not running
-    scp(filePath, dnsName + ":/usr/local/hbase/")
-    slaves.each {|inst|
-        scp(filePath, inst.dnsName + ":/usr/local/hbase/") }
-  end
+class YcsbCluster < SecureCluster
   
   def launch(options = {})
     super(options)
-    
-    startHadoop
-    if (options[:uploadHBaseJarDire] != nil)
-      uploadHBaseJar(options[:uploadHBaseJarDire]) if File.exists?(options[:uploadHBaseJarDire])
-    end
-    
-    startHBase
   end
 
   # Send results to email recipients thru SMTP

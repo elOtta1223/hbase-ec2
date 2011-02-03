@@ -68,20 +68,15 @@ chkconfig --levels 0123456 kadmin off
 echo "Installing Hadoop $HADOOP_VERSION."
 cd /usr/local
 wget -nv $HADOOP_URL
-
-#should be:
-#tar xzf hadoop-$HADOOP_VERSION-SNAPSHOT.tar.gz
-tar xzf hadoop-$HADOOP_VERSION*.tar.gz
-rm -f hadoop-$HADOOP_VERSION*.tar.gz
-ln -s hadoop-$HADOOP_VERSION* hadoop-$HADOOP_VERSION
+tar xzf hadoop-$HADOOP_VERSION.tar.gz
+rm -f hadoop-$HADOOP_VERSION.tar.gz
 
 # Install HBase
 echo "Installing HBase $HBASE_VERSION."
 cd /usr/local
 wget -nv $HBASE_URL
-tar xzf hbase-$HBASE_VERSION*.tar.gz 
-rm -f hbase-$HBASE_VERSION*.tar.gz
-ln -s hbase-$HABASE_VERSION* hbase-$HBASE_VERSION
+tar xzf hbase-$HBASE_VERSION.tar.gz 
+rm -f hbase-$HBASE_VERSION.tar.gz
 
 # Configure Hadoop
 echo "export JAVA_HOME=/usr/local/jdk${JAVA_VERSION}
@@ -137,8 +132,7 @@ cd /usr/local/hadoop-${HADOOP_VERSION} && ln -s hadoop-core-${HADOOP_VERSION}.ja
 cd ~root
 # Don't need to delete .bash_history since it isn't written until exit.
 df -h
-
-ec2-bundle-vol -d /mnt -k /mnt/$EC2_ROOT_SSH_KEY -c /mnt/cert.pem -u $AWS_ACCOUNT_ID -s 3072 -p hbase-$HBASE_VERSION-$arch -r $arch
+ec2-bundle-vol -d /mnt -k /mnt/key.pem -c /mnt/cert.pem -u $AWS_ACCOUNT_ID -s 3072 -p hbase-$HBASE_VERSION-$arch -r $arch
 
 ec2-upload-bundle --access-key $AWS_ACCESS_KEY_ID --secret-key $AWS_SECRET_ACCESS_KEY  --bucket $S3_BUCKET --manifest /mnt/hbase-$HBASE_VERSION-$arch.manifest.xml 
 
