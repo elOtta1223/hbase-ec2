@@ -46,7 +46,7 @@ ClusterOptions = {
   :num_regionservers => 3,
   :security_group_prefix => 'hcluster',
   :hbase_debug_level => 'INFO',
-  :owner_id => '801535628028'
+  :image_id => 'ami-0441b16d'
 }
 
 @ycsb = Hadoop::YcsbCluster
