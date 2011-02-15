@@ -25,11 +25,11 @@ add_client() {
  pass=$2
  kt=$3
  host=$4
- /usr/kerberos/sbin/kadmin -p $user -w $pass <<EOF 
+ kadmin -p $user -w $pass <<EOF 
 add_principal -randkey host/$host
 add_principal -randkey hadoop/$host
 add_principal -randkey hbase/$host
-ktadd -k $kt host/$host
+ktadd host/$host
 ktadd -k $kt hadoop/$host
 ktadd -k $kt hbase/$host
 quit
@@ -38,17 +38,141 @@ EOF
 kadmin_setup() {
  kmasterpass=$1
  kadmpass=$2
- /usr/kerberos/sbin/kdb5_util create -s -P ${kmasterpass}
+ host=$3
+ kdb5_util create -s -P ${kmasterpass}
  service krb5kdc start
  service kadmin start
  sleep 1
- /usr/kerberos/sbin/kadmin.local <<EOF 
+ kadmin.local <<EOF 
 add_principal -pw $kadmpass kadmin/admin
 add_principal -pw $kadmpass hadoop/admin
 add_principal -pw had00p hclient
+add_principal -randkey ldap/$host
+ktadd -k /etc/openldap/ldap.keytab ldap/$host
 quit
 EOF
 }
+
+ldap_server_setup() {
+  cat >>/etc/sysconfig/ldap <<EOF
+export KRB5_KTNAME=/etc/openldap/ldap.keytab
+EOF
+
+  mv /etc/openldap/slapd.d /etc/openldap/slapd.d.bak
+
+  rootpw=$(slappasswd -p 'passwd')
+
+  cat >/etc/openldap/slapd.conf <<EOF
+suffix          "dc=hadoop,dc=localdomain"
+rootdn          "cn=Manager,dc=hadoop,dc=localdomain"
+rootpw          $rootpw
+idletimeout 3600
+# This is a bit of a hack to restrict the SASL mechanisms that the
+# server advertises to just GSSAPI.  Otherwise it also advertises
+# DIGEST-MD5, which the clients prefer.  Then you have to add "-Y
+# GSSAPI" to all of your ldapsearch/ldapmodify/etc. command lines, which
+# is annoying.  The default for this is noanonymous,noplain so the
+# addition of noactive is what makes DIGEST-MD5 and the others go away.
+sasl-secprops noanonymous,noplain,noactive
+
+# Map SASL authentication DNs to LDAP DNs
+#   This leaves "username/admin" principals untouched
+sasl-regexp uid=([^/]*),cn=GSSAPI,cn=auth uid=$1,ou=people,dc=hadoop,dc=localdomain
+# This should be a   ^  plus, not a star, but slapd won't accept it
+
+# Users can change their shell, anyone else can see it
+access to attr=loginShell
+        by dn.regex="uid=.*/admin,cn=GSSAPI,cn=auth" write
+        by self write
+        by * read
+# Only the user can see their employeeNumber
+access to attr=employeeNumber
+        by dn.regex="uid=.*/admin,cn=GSSAPI,cn=auth" write
+        by self read
+        by * none
+# Default read access for everything else
+access to *
+        by dn.regex="uid=.*/admin,cn=GSSAPI,cn=auth" write
+        by * read
+EOF
+
+  # create the config file for bdb
+  cat >/var/lib/ldap/DB_CONFIG <<EOF
+# Increase the cache size to 8MB
+set_cachesize 0 8388608 1
+EOF
+
+  chkconfig slapd on
+  service slapd start
+
+  cat >sample.ldif <<EOF
+dn: dc=hadoop,dc=localdomain
+objectclass: organization
+objectclass: dcObject
+o: Hadoop
+dc: hadoop
+description: Hadoop org
+
+##############################################################################
+# passwd
+##############################################################################
+
+dn: ou=people,dc=hadoop,dc=localdomain
+objectclass: organizationalUnit
+ou: people
+description: Hadoop users
+
+dn: uid=huser,ou=people,dc=hadoop,dc=localdomain
+objectClass: inetOrgPerson
+objectClass: posixAccount
+cn: Hadoop User
+givenName: huser
+sn:  Hadoop
+mail: huser@hadoop.localdomain
+telephoneNumber: +1 206 111 2222
+title: Tester
+uid: huser
+uidNumber: 10000
+gidNumber: 100
+homeDirectory: /home/huser
+loginShell: /bin/bash
+
+##############################################################################
+# group
+##############################################################################
+
+dn: ou=group,dc=hadoop,dc=localdomain
+objectClass: organizationalUnit
+ou: group
+description: Hadoop Groups
+
+dn: cn=users,ou=group,dc=hadoop,dc=localdomain
+cn: users
+objectClass: posixGroup
+userPassword: {crypt}*
+gidNumber: 100
+memberUid: huser
+memberUid: hclient
+
+EOF
+
+  ldapadd -x -D "cn=Manager,dc=hadoop,dc=localdomain" -w $rootpw -f sample.ldif
+}
+
+ldap_client() {
+  masterhost=$1
+  authconfig --enableldap --enablekrb5 --update
+
+  cat >/etc/openldap/ldap.conf <<EOF
+BASE	dc=hadoop, dc=localdomain
+URI	ldap://$masterhost ldaps://$masterhost
+TLS_CACERT	/etc/pki/tls/certs/ca-bundle.crt
+EOF
+  ln -s /etc/openldap/ldap.conf /etc/ldap.conf
+  ln -s /etc/openldap/ldap.conf /etc/pam_ldap.conf
+  ln -s /etc/openldap/ldap.conf /etc/nss_ldap.conf
+}
+
 sysctl -w fs.file-max=65536
 echo "root soft nofile 65536" >> /etc/security/limits.conf
 echo "root hard nofile 65536" >> /etc/security/limits.conf
@@ -118,6 +242,7 @@ cat > /etc/krb5.conf <<EOF
 [domain_realm]
  localhost = HADOOP.LOCALDOMAIN
  .compute-1.internal = HADOOP.LOCALDOMAIN
+ .us-west-1.compute-1.internal = HADOOP.LOCALDOMAIN
  .internal = HADOOP.LOCALDOMAIN
  internal = HADOOP.LOCALDOMAIN
 
@@ -137,15 +262,18 @@ EOF
 KDC_MASTER_PASS="EiSei0Da"
 KDC_ADMIN_PASS="Chohpet6"
 if [ "$IS_MASTER" = "true" ]; then
-  kadmin_setup $KDC_MASTER_PASS $KDC_ADMIN_PASS
+  kadmin_setup $KDC_MASTER_PASS $KDC_ADMIN_PASS $MASTER_HOST
+  yum -y install openldap-servers
 fi
 keytab="$HADOOP_HOME/conf/nn.keytab"
 add_client "hadoop/admin" $KDC_ADMIN_PASS $keytab $HOSTNAME
+yum -y install openldap-clients cyrus-sasl-gssapi pam-krb5 nss-pam-ldapd
 chown hadoop:hadoop $keytab
 if [ "$IS_MASTER" = "true" ]; then
  cd /usr/local/hadoop-*; kinit -k -t conf/nn.keytab hadoop/$HOSTNAME
 fi
 umount /mnt
+umount /media/ephemeral0
 mkfs.xfs -f /dev/sdb
 mount -o noatime /dev/sdb /mnt
 mkdir -p /mnt/hadoop/dfs/data /mnt/mapred/local /mnt/hadoop/logs /mnt/hbase/logs
@@ -157,9 +285,9 @@ MAPRED_LOCAL_DIR="/mnt/mapred/local"
 i=2
 for d in c d e f g h i j k l m n o p q r s t u v w x y z; do
  m="/mnt${i}"
- mkdir -p $m && mkfs.xfs -f /dev/sd${d}
+ mkdir -p $m && mkfs.xfs -f /dev/xvd${d}
  if [ $? -eq 0 ] ; then
-  mount -o noatime /dev/sd${d} $m > /dev/null 2>&1
+  mount -o noatime /dev/xvd${d} $m > /dev/null 2>&1
   if [ $i -lt 3 ] ; then # no more than two namedirs
    DFS_NAME_DIR="${DFS_NAME_DIR},${m}/hadoop/dfs/name"
   fi
@@ -191,7 +319,7 @@ else
  service gmond start
 fi
 cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
-export HADOOP_OPTS="$HADOOP_OPTS -Djavax.security.auth.useSubjectCredsOnly=false"
+export HADOOP_OPTS="\$HADOOP_OPTS -Djavax.security.auth.useSubjectCredsOnly=false"
 export HADOOP_NAMENODE_USER=$HADOOP_SECURE_USER
 export HADOOP_SECONDARYNAMENODE_USER=$HADOOP_SECURE_USER
 export HADOOP_DATANODE_USER=$HADOOP_SECURE_USER
@@ -389,10 +517,10 @@ cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
 export JAVA_HOME=/usr/local/jdk
 EOF
 cat >> $HADOOP_HOME/conf/hadoop-env.sh <<EOF
-HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/zookeeper-3.3.2.jar:$HBASE_HOME/conf"
+export HADOOP_CLASSPATH="$HBASE_HOME/hbase-${HBASE_VERSION}.jar:$HBASE_HOME/lib/zookeeper-3.3.2.jar:$HBASE_HOME/conf"
 export HADOOP_NAMENODE_OPTS="-Xms4000m -Xmx4000m -XX:+UseMembar -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+UseParNewGC -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCDateStamps"
-export HADOOP_SECONDARYNAMENODE_OPTS="$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-secondarynamenode-gc.log"
-export HADOOP_NAMENODE_OPTS="$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-namenode-gc.log"
+export HADOOP_SECONDARYNAMENODE_OPTS="\$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-secondarynamenode-gc.log"
+export HADOOP_NAMENODE_OPTS="\$HADOOP_NAMENODE_OPTS -Xloggc:/mnt/hadoop/logs/hadoop-namenode-gc.log"
 export HADOOP_DATANODE_OPTS="-Xms1000m -Xmx1000m -XX:+UseMembar -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -XX:+UseParNewGC"
 EOF
 cat > $HADOOP_HOME/conf/hadoop-metrics.properties <<EOF

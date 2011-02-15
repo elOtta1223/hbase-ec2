@@ -48,11 +48,12 @@ HADOOP_URL=http://tm-aws-4-files.s3.amazonaws.com/hadoop/hadoop-$HADOOP_VERSION.
 LZO_URL=http://tm-aws-4-files.s3.amazonaws.com/hadoop/lzo-linux-$HADOOP_VERSION.tar.gz
 
 # The Amazon EC2 bucket for images
-#REGION=us-east-1
 REGION=us-west-1
-#REGION=eu-west-1
+#REGION=us-west-1
+#REGION=us-west-1
 #REGION=ap-southeast-1
-S3_BUCKET=tm-aws-4-bundles-$REGION
+#S3_BUCKET=tm-aws-4-bundles-$REGION
+S3_BUCKET=mlai-ami
 # Account for bucket
 # We need this because S3 is returning account identifiers instead of bucket
 # names.
@@ -137,7 +138,7 @@ if [ "$SLAVE_INSTANCE_TYPE" = "m1.small" -o "$SLAVE_INSTANCE_TYPE" = "c1.medium"
   BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-810657c4"}
 else
   SLAVE_ARCH='x86_64'
-  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-870657c2"}
+  BASE_AMI_IMAGE=${BASE_AMI_IMAGE:-"ami-f61dfd9f"}
 fi
 
 if [ "$MASTER_INSTANCE_TYPE" = "m1.small" -o "$MASTER_INSTANCE_TYPE" = "c1.medium" ]; then

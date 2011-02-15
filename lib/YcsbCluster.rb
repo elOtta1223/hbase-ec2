@@ -44,7 +44,7 @@ MESSAGE_END
   def generateResultDetail(options, testStartTime, testEndTime,
     builtTime, buildNumber, gitChanges = nil)
     # untar the file
-    %x[ cd #{options[:localProcessDir]}; mkdir -p backup; mv results/* backup; rm -rf results; tar zxf results.tar.gz]
+    %x[ cd #{options[:localProcessDir]}; mkdir -p backup; if [ -r results ]; then mv results/* backup; fi; rm -rf results; tar zxf results.tar.gz]
     
     resultsDir=options[:localProcessDir] + "/results"
     reportDetail=""

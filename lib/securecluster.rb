@@ -6,7 +6,7 @@ module Hadoop
       done = false
       unless done
         begin
-          ssh("su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{master.privateDnsName.downcase}; bin/hadoop namenode -format\"; /usr/local/hadoop/bin/hadoop-daemon.sh start namenode")
+          ssh("su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{master.privateDnsName.downcase}; kinit -R; bin/hadoop namenode -format\"; /usr/local/hadoop/bin/hadoop-daemon.sh start namenode")
           done = true
         rescue
         end
@@ -14,7 +14,7 @@ module Hadoop
       done = false
       unless done
         begin
-          ssh_to(secondary.dnsName, "su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{secondary.privateDnsName.downcase}\"; /usr/local/hadoop/bin/hadoop-daemon.sh start secondarynamenode")
+          ssh_to(secondary.dnsName, "su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{secondary.privateDnsName.downcase}\"; kinit -R; /usr/local/hadoop/bin/hadoop-daemon.sh start secondarynamenode")
           done = true
         rescue
         end
@@ -22,7 +22,7 @@ module Hadoop
       done = false
       unless done
         begin
-          slaves.each { |inst| ssh_to(inst.dnsName, "su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{inst.privateDnsName.downcase}\"; /usr/local/hadoop/bin/hadoop-daemon.sh start datanode") }
+          slaves.each { |inst| ssh_to(inst.dnsName, "su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{inst.privateDnsName.downcase}\"; kinit -R; /usr/local/hadoop/bin/hadoop-daemon.sh start datanode") }
           done = true
         rescue
         end
@@ -86,7 +86,79 @@ module Hadoop
 
       startMR
     end
-
+    
+    def stop_all 
+      stopMR
+      stopHBase
+      stopHDFS
+    end
+    
+    def stopMR
+      done = false
+      unless done
+        begin
+          slaves.each { |inst| ssh_to(inst.dnsName, "su -l hadoop -c \"/usr/local/hadoop/bin/hadoop-daemon.sh stop tasktracker\"") }
+          done = true
+        rescue
+        end
+      end
+      done = false
+      unless done
+        begin
+          ssh("su -l hadoop -c \"cd /usr/local/hadoop ; /usr/local/hadoop/bin/hadoop-daemon.sh stop jobtracker\"")
+          done = true
+        rescue
+        end
+      end
+      
+    end
+    
+    def stopHBase
+      done = false
+      unless done
+        begin
+          slaves.each { |inst| ssh_to(inst.dnsName, "su -l hadoop -c \"/usr/local/hbase/bin/hbase-daemon.sh stop regionserver\"") }
+          done = true
+        rescue
+        end
+      end
+      done = false
+      unless done
+        begin
+          ssh("su -l hadoop -c \"/usr/local/hbase/bin/hbase-daemon.sh stop master\"")
+          done = true
+        rescue
+        end
+      end
+    end
+        
+    def stopHDFS
+      done = false
+      unless done
+        begin
+          slaves.each { |inst| ssh_to(inst.dnsName, "kinit -R; /usr/local/hadoop/bin/hadoop-daemon.sh stop datanode") }
+          done = true
+        rescue
+        end
+      end    
+      done = false
+      unless done
+        begin
+          ssh("/usr/local/hadoop/bin/hadoop-daemon.sh stop namenode")
+          done = true
+        rescue
+        end
+      end
+      done = false
+      unless done
+        begin
+          ssh_to(secondary.dnsName, "su -l hadoop -c \"cd /usr/local/hadoop; kinit -k -t conf/nn.keytab hadoop/#{secondary.privateDnsName.downcase}\"; kinit -R; /usr/local/hadoop/bin/hadoop-daemon.sh stop secondarynamenode")
+          done = true
+        rescue
+        end
+      end
+         
+    end
   end
 
 end

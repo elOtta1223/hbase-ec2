@@ -26,6 +26,13 @@ end
 
 module Hadoop
 
+  #FIXME: move to yaml config file.
+  EC2_ROOT_SSH_KEY = ENV['EC2_ROOT_SSH_KEY'] ? "#{ENV['EC2_ROOT_SSH_KEY']}" : "#{ENV['HOME']}/.ec2/root.pem"
+  EC2_CERT = ENV['EC2_CERT'] ? "#{ENV['EC2_CERT']}" : "#{ENV['HOME']}/.ec2/cert.pem"
+  EC2_PRIVATE_KEY = ENV['EC2_PRIVATE_KEY'] ? "#{ENV['EC2_PRIVATE_KEY']}" : "#{ENV['HOME']}/.ec2/key.pem"
+    
+  puts "using #{EC2_ROOT_SSH_KEY} as ssh key."
+
   class Himage < AWS::EC2::Base
     attr_reader :label,:image_id,:image,:shared_base_object, :owner_id
 
@@ -230,14 +237,19 @@ module Hadoop
         :debug => false,
         :base_ami_image => 'ami-b00ce4d9',
         :arch => "x86_64",
-        :delete_existing => false
+        :delete_existing => false,
+        :label => nil
       }.merge(options)
       #FIXME: check for existence of tarfile URLs: if they don't exist, either raise exception or call upload_tars().
       #..
       #FIXME: check for existence of @ami_s3 and @tar_s3 buckets.
       #
 
-      image_label = "hbase-#{HCluster.label_to_hbase_version(File.basename(@hbase_filename))}-#{options[:arch]}"
+      if defined? options[:label]
+        image_label = options[:label]
+      else
+        image_label = "hbase-#{HCluster.label_to_hbase_version(File.basename(@hbase_filename))}-#{options[:arch]}"
+      end
 
       existing_image = Himage.find_owned_image :label => image_label
       if existing_image[0]
@@ -275,8 +287,9 @@ module Hadoop
       HCluster::scp_to(image_creator_hostname,"#{ROOT_DIR}/bin/image/ec2-run-user-data","/etc/init.d")
       
       # Copy private key and certificate (for bundling image)
-      HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt")
-      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt")
+      #HCluster::scp_to(image_creator_hostname, EC2_ROOT_SSH_KEY, "/mnt")
+      HCluster::scp_to(image_creator_hostname, EC2_PRIVATE_KEY, "/mnt/key.pem")
+      HCluster::scp_to(image_creator_hostname, EC2_CERT, "/mnt/cert.pem")
 
       hbase_version = HCluster.label_to_hbase_version(File.basename(@hbase_filename))
       hadoop_version = HCluster.label_to_hbase_version(File.basename(@hadoop_filename))
@@ -394,12 +407,6 @@ module Hadoop
 
   end
   
-  #FIXME: move to yaml config file.
-  EC2_ROOT_SSH_KEY = ENV['EC2_ROOT_SSH_KEY'] ? "#{ENV['EC2_ROOT_SSH_KEY']}" : "#{ENV['HOME']}/.ec2/root.pem"
-  EC2_CERT = ENV['EC2_CERT'] ? "#{ENV['EC2_CERT']}" : "#{ENV['HOME']}/.ec2/cert.pem"
-    
-  puts "using #{EC2_ROOT_SSH_KEY} as ssh key."
-
   class HClusterStateError < StandardError
   end
 
@@ -1284,7 +1291,7 @@ module Hadoop
           if @debug_level > 0
             puts "sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
           end
-          HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:master:#{master.dnsName}","]\n")
+          HCluster::ssh_to(master.dnsName,"sh /root/#{@@remote_init_script} #{master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\" | tee /root/setup.log", stdout_handler,stderr_handler, "[setup:master:#{master.dnsName}","]\n")
           ready = true
         rescue
         end
@@ -1304,7 +1311,7 @@ module Hadoop
           HCluster::scp_to(secondary.dnsName,init_script,"/root/#{@@remote_init_script}")
           HCluster::ssh_to(secondary.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
           puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
-          HCluster::ssh_to(secondary.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:secondary:#{secondary.dnsName}","]\n")
+          HCluster::ssh_to(secondary.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\" | tee /root/setup.log", stdout_handler,stderr_handler, "[setup:secondary:#{secondary.dnsName}","]\n")
           ready = true
         rescue
         end
@@ -1323,7 +1330,7 @@ module Hadoop
             HCluster::scp_to(inst.dnsName,init_script,"/root/#{@@remote_init_script}")
             HCluster::ssh_to(inst.dnsName,"chmod 700 /root/#{@@remote_init_script}",HCluster::consume_output,HCluster::consume_output,nil,nil)
             puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
-            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:rs:#{inst.dnsName}","]\n")
+            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\" | tee /root/setup.log", stdout_handler,stderr_handler, "[setup:rs:#{inst.dnsName}","]\n")
             ready = true
           rescue
           end
@@ -1345,7 +1352,7 @@ module Hadoop
             if @debug_level > 0
               puts "sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\""
             end
-            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\"", stdout_handler,stderr_handler, "[setup:aux:#{inst.dnsName}","]\n")
+            HCluster::ssh_to(inst.dnsName,"sh /root/#{@@remote_init_script} #{@master.dnsName} \"#{@zookeeper_quorum}\" #{@num_regionservers} \"#{extra_packages}\" \"#{@hbase_debug_level}\" | tee /root/setup.log", stdout_handler,stderr_handler, "[setup:aux:#{inst.dnsName}","]\n")
             ready = true
           rescue
           end

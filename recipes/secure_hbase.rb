@@ -10,7 +10,7 @@ options = {
   :security_group_prefix => "hcluster",
   :debug_level => 1,
   :hbase_debug_level => "INFO",
-  :owner_id => '801535628028'
+  :owner_id => '354447488659'
 }
 
 @cluster = Hadoop::SecureCluster
